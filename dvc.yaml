@@ -1,0 +1,13 @@
+stages:
+  extract_features:
+    cmd: python ml/extract_features.py --repo-path ${repo_path} --since ${since}
+    deps:
+      - ml/extract_features.py
+      - ml/config.yaml
+    outs:
+      - data/commit_features.csv
+    params:
+      - repo_path
+      - since
+      - ml/config.yaml:
+          - label_window_days

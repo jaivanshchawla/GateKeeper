@@ -1,0 +1,25 @@
+schema: '2.0'
+stages:
+  extract_features:
+    cmd: python ml/extract_features.py --repo-path ../../django --since 
+      2023-08-09
+    deps:
+    - path: ml/config.yaml
+      hash: md5
+      md5: a0ee6046166368d7848f5ba4c2dcda44
+      size: 400
+    - path: ml/extract_features.py
+      hash: md5
+      md5: 617ee7745afaf274a414ca6ae92881c2
+      size: 9060
+    params:
+      params.yaml:
+        repo_path: ../../django
+        since: '2023-08-09'
+      ml/config.yaml:
+        label_window_days: 7
+    outs:
+    - path: data/commit_features.csv
+      hash: md5
+      md5: 3eff39fc51686d8e9e990f9ca90ab79e
+      size: 309742
