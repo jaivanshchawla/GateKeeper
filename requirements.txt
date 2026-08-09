@@ -1,0 +1,8 @@
+pydriller
+pandas
+scikit-learn
+lightgbm
+mlflow
+dvc
+pyyaml
+pytest

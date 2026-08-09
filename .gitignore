@@ -1,0 +1,39 @@
+# Data files (large, generated) - DVC tracks via .dvc files
+data/*.csv
+
+# MLflow tracking database
+mlflow.db
+
+# MLflow tracking directory
+mlruns/
+
+# DVC cache (tracked by DVC, not git)
+.dvc/cache/
+.dvc/tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
