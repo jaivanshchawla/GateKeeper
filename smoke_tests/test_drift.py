@@ -20,9 +20,20 @@ def test_drift_report_generates():
     from evidently.legacy.report import Report
     from evidently.legacy.metric_preset import DataDriftPreset
 
-    # Load data
-    data_path = os.path.join(os.path.dirname(__file__), "..", "data", "commit_features.csv")
-    assert os.path.exists(data_path), f"Data file not found: {data_path}"
+    # Load data - try multiple paths for compatibility with different environments
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "data", "commit_features.csv"),
+        os.path.join(os.getcwd(), "data", "commit_features.csv"),
+        "/app/data/commit_features.csv",  # Docker container path
+    ]
+    
+    data_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            data_path = path
+            break
+    
+    assert data_path is not None, f"Data file not found in any of: {possible_paths}"
 
     df = pd.read_csv(data_path)
     print(f"Loaded {len(df)} rows from commit_features.csv")
