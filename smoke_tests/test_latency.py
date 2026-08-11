@@ -8,6 +8,7 @@ Reports actual time if it fails so thresholds can be adjusted.
 
 import time
 
+import pytest
 import requests
 
 # Maximum acceptable latency in seconds
@@ -55,5 +56,4 @@ def test_predict_p95_latency(api_url, safe_payload, wait_for_api):
         print(f"WARNING: p95 latency ({p95_latency:.3f}s) exceeds threshold ({MAX_LATENCY_SECONDS}s)")
 
 
-# Import pytest for pytest.fail
-import pytest
+
