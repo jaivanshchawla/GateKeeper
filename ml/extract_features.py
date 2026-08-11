@@ -7,9 +7,9 @@ Extracts per-commit metrics using PyDriller and labels risky commits.
 import argparse
 import os
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 import pandas as pd
 import yaml
@@ -202,7 +202,7 @@ class CommitFeatureExtractor:
         pos_pct = (positive / total) * 100
         neg_pct = (negative / total) * 100
         
-        print(f"\nClass Balance Summary:")
+        print("\nClass Balance Summary:")
         print(f"Total commits: {total}")
         print(f"Risky (1): {positive} ({pos_pct:.2f}%)")
         print(f"Safe (0): {negative} ({neg_pct:.2f}%)")

@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=sqlite:///app/mlflow.db
+    volumes:
+      - .:/app
+    depends_on:
+      - webhook
+    networks:
+      - gatekeeper-network
+
+  webhook:
+    build:
+      context: .
+      dockerfile: webhook/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+    volumes:
+      - .:/app
+    networks:
+      - gatekeeper-network
+
+networks:
+  gatekeeper-network:
+    driver: bridge

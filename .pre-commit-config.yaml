@@ -1,0 +1,35 @@
+# Pre-commit hooks for Gatekeeper
+# Install as PRE-PUSH hook: pre-commit install --hook-type pre-push
+
+repos:
+  # Detect secrets in code
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+
+  # Python linter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # Local hook: Check for data leakage
+  - repo: local
+    hooks:
+      - id: check-data-leakage
+        name: Check for data leakage
+        entry: python scripts/check_data_leakage.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Local hook: Run pytest
+      - id: pytest
+        name: Run tests
+        entry: python -m pytest tests/ -x -q
+        language: system
+        pass_filenames: false
+        always_run: true

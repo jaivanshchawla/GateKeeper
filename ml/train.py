@@ -5,13 +5,11 @@ Trains a LightGBM binary classifier to predict risky commits.
 """
 
 import os
-from pathlib import Path
 from typing import Dict, Tuple
 
 import lightgbm as lgb
 import mlflow
 import mlflow.sklearn
-import numpy as np
 import pandas as pd
 import yaml
 from sklearn.metrics import (
@@ -172,7 +170,7 @@ def main():
     negative = total - positive
     pos_pct = (positive / total) * 100
     
-    print(f"\nClass Balance:")
+    print("\nClass Balance:")
     print(f"Total commits: {total}")
     print(f"Risky (1): {positive} ({pos_pct:.2f}%)")
     print(f"Safe (0): {negative} ({100 - pos_pct:.2f}%)")
@@ -199,7 +197,7 @@ def main():
     print("Evaluating model...")
     metrics = evaluate_model(model, X_test, y_test)
     
-    print(f"\nEvaluation Metrics:")
+    print("\nEvaluation Metrics:")
     for metric, value in metrics.items():
         print(f"{metric}: {value:.4f}")
     
