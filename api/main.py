@@ -92,8 +92,30 @@ def _load_model():
         model = sio.loads(open(latest_file, "rb").read(), trusted=trusted_types)
         print(f"Loaded model '{model_name}' via direct filesystem fallback")
     except Exception as e2:
-        print(f"FATAL: Could not load model from any source: {e2}")
-        model = None
+        print(f"Strategy 2 failed: {e2}")
+
+    # Strategy 3: Load standalone model file (for Docker/GitHub Actions environments)
+    if model is None:
+        try:
+            standalone_model_path = os.path.join(os.path.dirname(__file__), "..", "models", "gatekeeper_risk_model.skops")
+            if os.path.exists(standalone_model_path):
+                print(f"Loading standalone model from: {standalone_model_path}")
+                trusted_types = [
+                    "collections.OrderedDict",
+                    "lightgbm.basic.Booster",
+                    "lightgbm.sklearn.LGBMClassifier",
+                    "numpy.dtype",
+                    "numpy.ndarray",
+                    "pandas.core.frame.DataFrame",
+                    "pandas.core.series.Series",
+                ]
+                model = sio.loads(open(standalone_model_path, "rb").read(), trusted=trusted_types)
+                print(f"Loaded model '{model_name}' from standalone file")
+            else:
+                raise FileNotFoundError(f"Standalone model not found: {standalone_model_path}")
+        except Exception as e3:
+            print(f"FATAL: Could not load model from any source: {e3}")
+            model = None
 
 
 @asynccontextmanager
