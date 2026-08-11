@@ -1,0 +1,67 @@
+# Gate 3: Post-Deploy Smoke Tests
+# Runs smoke tests against Docker containers to validate API health,
+# schema, sanity, latency, and data drift.
+#
+# NOTE: This currently triggers on push to main. Phase 9 will adjust
+# this to run after real deployment instead.
+
+name: Gate 3 - Post-Deploy Smoke Tests
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest requests evidently
+
+      - name: Build Docker containers
+        run: docker-compose build
+
+      - name: Start Docker containers
+        run: docker-compose up -d
+
+      - name: Wait for API to be ready
+        run: |
+          echo "Waiting for API to be ready..."
+          timeout 60 bash -c 'until curl -s http://localhost:8000/health | grep -q "healthy"; do sleep 2; done'
+          echo "API is ready!"
+
+      - name: Wait for webhook to be ready
+        run: |
+          echo "Waiting for webhook to be ready..."
+          timeout 30 bash -c 'until curl -s http://localhost:5000/health | grep -q "healthy"; do sleep 2; done' || echo "Webhook not available, continuing..."
+          echo "Webhook check complete!"
+
+      - name: Run smoke tests
+        run: |
+          pytest smoke_tests/ -v --tb=short
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: smoke_tests/drift_report.html
+          if-no-files-found: warn
+
+      - name: Cleanup Docker containers
+        if: always()
+        run: docker-compose down

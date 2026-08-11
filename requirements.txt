@@ -3,6 +3,16 @@ pandas
 scikit-learn
 lightgbm
 mlflow
+skops
 dvc
 pyyaml
 pytest
+fastapi
+uvicorn
+flask
+gunicorn
+pre-commit
+detect-secrets
+ruff
+evidently
+requests
