@@ -246,7 +246,7 @@ class TestPredictEndpoint:
         response = client.post("/predict", json=valid_payload)
         data = response.json()
 
-        assert data["commit_hash"] == "abc123def456"
+        assert data["commit_hash"] == "abc123def456" # pragma: allowlist secret
 
 
 class TestModelNotLoaded:

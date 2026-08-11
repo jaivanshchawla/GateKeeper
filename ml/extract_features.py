@@ -134,7 +134,6 @@ class CommitFeatureExtractor:
         # First, check for revert references
         revert_pattern = "revert"
         for idx, row in features_df.iterrows():
-            commit_hash = row["hash"]
             commit_msg = row["commit_msg"].lower()
             
             # Check if this commit is a revert

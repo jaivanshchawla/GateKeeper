@@ -21,7 +21,7 @@ repos:
     hooks:
       - id: check-data-leakage
         name: Check for data leakage
-        entry: venv/Scripts/python scripts/check_data_leakage.py
+        entry: python scripts/check_data_leakage.py
         language: system
         pass_filenames: false
         always_run: true
@@ -29,7 +29,7 @@ repos:
       # Local hook: Run pytest
       - id: pytest
         name: Run tests
-        entry: venv/Scripts/python -m pytest tests/ -x -q
+        entry: python -m pytest tests/ -x -q
         language: system
         pass_filenames: false
         always_run: true
