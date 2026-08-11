@@ -22,14 +22,18 @@ repos:
       - id: check-data-leakage
         name: Check for data leakage
         entry: python scripts/check_data_leakage.py
-        language: system
+        language: python
+        language_version: python3
         pass_filenames: false
         always_run: true
+        additional_dependencies: [pandas, scikit-learn, pyyaml]
 
       # Local hook: Run pytest
       - id: pytest
         name: Run tests
         entry: python -m pytest tests/ -x -q
-        language: system
+        language: python
+        language_version: python3
         pass_filenames: false
         always_run: true
+        additional_dependencies: [pytest, httpx]
