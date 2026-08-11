@@ -214,3 +214,7 @@ def main():
 
 
 if __name__ == "__main__":
+    exit(main())
+# TODO: fix this later
+x = 42  # unused variable
+def unused_function(): pass
