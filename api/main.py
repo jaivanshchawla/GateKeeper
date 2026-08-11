@@ -7,7 +7,6 @@ Provides prediction endpoint for commit risk assessment.
 import glob
 import os
 from contextlib import asynccontextmanager
-from typing import List
 
 import mlflow
 import mlflow.pyfunc
@@ -162,7 +161,7 @@ async def predict(request: PredictionRequest):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Prediction error: {str(e)}"
+            detail=f"Prediction error: {e!s}"
         )
 
 if __name__ == "__main__":

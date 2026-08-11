@@ -7,15 +7,14 @@ without needing to clone a real repository.
 """
 
 import os
-from datetime import datetime, timedelta
-from types import SimpleNamespace
-from typing import List
-
-import pandas as pd
-import pytest
 
 # Add parent directory to path so we can import the module
 import sys
+from datetime import datetime
+from types import SimpleNamespace
+
+import pandas as pd
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ml.extract_features import CommitFeatureExtractor
@@ -28,7 +27,7 @@ def create_mock_commit(
     insertions: int = 10,
     deletions: int = 5,
     files: int = 2,
-    modified_files: List[dict] = None,
+    modified_files: list[dict] = None,
     msg: str = "test commit",
 ) -> SimpleNamespace:
     """Create a mock PyDriller commit object for testing."""
@@ -74,7 +73,7 @@ class TestCommitFeatureExtractor:
         )
 
         commit = create_mock_commit(
-            hash="abc123def456",
+            hash="abc123def456", # pragma: allowlist secret
             author_name="Alice",
             insertions=42,
             deletions=10,
@@ -355,7 +354,7 @@ class TestCommitFeatureExtractor:
         )
 
         # Mock the Repository class to return our commit
-        import unittest.mock as mock
+        from unittest import mock
         with mock.patch("ml.extract_features.Repository") as MockRepo:
             mock_instance = MockRepo.return_value
             mock_instance.traverse_commits.return_value = [mock_commit]

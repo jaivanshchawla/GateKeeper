@@ -9,7 +9,7 @@ with a mocked model to avoid needing a real MLflow model.
 import os
 import sys
 from contextlib import asynccontextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -230,7 +230,7 @@ class TestPredictEndpoint:
         """Response should include commit_hash if provided in features."""
         valid_payload = {
             "features": {
-                "hash": "abc123def456",
+                "hash": "abc123def456", # pragma: allowlist secret
                 "lines_added": 10,
                 "lines_deleted": 0,
                 "files_touched": 1,

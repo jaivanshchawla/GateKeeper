@@ -5,7 +5,6 @@ Trains a LightGBM binary classifier to predict risky commits.
 """
 
 import os
-from typing import Dict, Tuple
 
 import lightgbm as lgb
 import mlflow
@@ -21,7 +20,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 
 
-def load_config(config_path: str) -> Dict:
+def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
@@ -40,7 +39,7 @@ def load_features(features_path: str) -> pd.DataFrame:
 def prepare_data(
     df: pd.DataFrame,
     feature_columns: list
-) -> Tuple[pd.DataFrame, pd.Series]:
+) -> tuple[pd.DataFrame, pd.Series]:
     """Prepare feature matrix and target vector."""
     # Check if all required columns exist
     missing_cols = [col for col in feature_columns if col not in df.columns]
@@ -56,7 +55,7 @@ def prepare_data(
 def train_model(
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    params: Dict
+    params: dict
 ) -> lgb.LGBMClassifier:
     """Train a LightGBM classifier."""
     # Create LightGBM classifier
@@ -72,11 +71,10 @@ def evaluate_model(
     model: lgb.LGBMClassifier,
     X_test: pd.DataFrame,
     y_test: pd.Series
-) -> Dict:
+) -> dict:
     """Evaluate the trained model."""
     # Make predictions
     y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
     
     # Calculate metrics
     metrics = {
@@ -91,8 +89,8 @@ def evaluate_model(
 
 def log_to_mlflow(
     model: lgb.LGBMClassifier,
-    params: Dict,
-    metrics: Dict,
+    params: dict,
+    metrics: dict,
     X_train: pd.DataFrame
 ) -> None:
     """Log experiment to MLflow."""
@@ -177,7 +175,7 @@ def main():
     
     # Warn if positives are under 5%
     if pos_pct < 5:
-        print("\n⚠️  WARNING: Positive class is under 5% of the data!")
+        print("\nWARNING: Positive class is under 5% of the data!")
         print("Consider resampling or adjusting the labeling criteria.")
     
     # Split data

@@ -83,7 +83,7 @@ def main():
     overlap = train_indices & test_indices
 
     if overlap:
-        print(f"\nDATA LEAKAGE DETECTED!")
+        print("\nDATA LEAKAGE DETECTED!")
         print(f"Found {len(overlap)} rows that appear in both train and test sets.")
         print(f"Overlapping indices: {sorted(list(overlap))[:10]}...")
         sys.exit(1)

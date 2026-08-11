@@ -9,7 +9,6 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict
 
 import pandas as pd
 import yaml
@@ -38,7 +37,7 @@ class CommitFeatureExtractor:
         # Store commit info for labeling (hash -> {date, files})
         self.commit_info = {}
 
-    def _extract_features_from_commit(self, commit) -> Dict:
+    def _extract_features_from_commit(self, commit) -> dict:
         """Extract features from a single commit object."""
         # Basic commit info
         lines_added = commit.insertions
@@ -105,7 +104,7 @@ class CommitFeatureExtractor:
             "commit_msg": commit_msg,
         }
 
-    def _collect_all_commits(self) -> List[Dict]:
+    def _collect_all_commits(self) -> list[dict]:
         """Collect all commits with features."""
         print(f"Mining commits from {self.repo_path} since {self.since}...")
         
@@ -164,6 +163,29 @@ class CommitFeatureExtractor:
                         break
         
         return features_df
+
+    def extract_single_commit(self, repo_path: str, commit_hash: str) -> dict:
+        """
+        Extract features for a single specified commit.
+
+        Args:
+            repo_path: Path to the cloned git repository
+            commit_hash: The hash of the commit to extract features for
+
+        Returns:
+            Dictionary with feature values for the commit
+        """
+        # Use PyDriller to get the specific commit
+        repository = Repository(repo_path, single=commit_hash)
+
+        for commit in repository.traverse_commits():
+            # Extract features using the existing method
+            features = self._extract_features_from_commit(commit)
+            # Remove commit_msg as it's not used in training
+            features.pop('commit_msg', None)
+            return features
+
+        raise ValueError(f"Commit {commit_hash} not found in repository")
 
     def extract_and_save(self, output_path: str) -> pd.DataFrame:
         """
