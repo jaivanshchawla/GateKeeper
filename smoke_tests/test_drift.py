@@ -13,6 +13,7 @@ Phase 9's live deployment can later compare real production traffic against trai
 import os
 
 import pandas as pd
+import pytest
 
 
 def test_drift_report_generates():
