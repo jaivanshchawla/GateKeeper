@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 def create_mock_model():
     """Create a mock model that returns predictable predictions."""
     mock_model = MagicMock()
-    # Return high risk score (0.85)
-    mock_model.predict.return_value = np.array([0.85])
+    # Return high risk probability (0.85 for class 1, 0.15 for class 0)
+    mock_model.predict_proba.return_value = np.array([[0.15, 0.85]])
     return mock_model
 
 

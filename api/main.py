@@ -142,8 +142,8 @@ async def predict(request: PredictionRequest):
         feature_values = [request.features[col] for col in FEATURE_COLUMNS]
         features_array = np.array([feature_values])
         
-        # Get prediction probability
-        risk_score = float(model.predict(features_array)[0])
+        # Get prediction probability of risky class (class 1)
+        risk_score = float(model.predict_proba(features_array)[0][1])
         
         # Determine risk label based on thresholds
         if risk_score < 0.3:
