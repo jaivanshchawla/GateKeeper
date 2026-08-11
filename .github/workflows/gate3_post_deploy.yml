@@ -33,10 +33,10 @@ jobs:
           pip install pytest requests evidently
 
       - name: Build Docker containers
-        run: docker-compose build
+        run: docker compose build
 
       - name: Start Docker containers
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Wait for API to be ready
         run: |
@@ -64,4 +64,4 @@ jobs:
 
       - name: Cleanup Docker containers
         if: always()
-        run: docker-compose down
+        run: docker compose down
