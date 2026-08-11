@@ -13,7 +13,6 @@ Phase 9's live deployment can later compare real production traffic against trai
 import os
 
 import pandas as pd
-import pytest
 
 
 def test_drift_report_generates():
@@ -66,14 +65,14 @@ def test_drift_report_generates():
     dataset_drift = drift_detection.get("dataset_drift", False)
     drift_share = drift_detection.get("drift_share", 0)
 
-    print(f"\n=== Drift Detection Results ===")
+    print("\n=== Drift Detection Results ===")
     print(f"Dataset drift detected: {dataset_drift}")
     print(f"Drift share: {drift_share:.2%}")
 
     # Print per-feature drift if available
     columns_drift = drift_detection.get("drift_by_columns", {})
     if columns_drift:
-        print(f"\nPer-feature drift:")
+        print("\nPer-feature drift:")
         for feature_name, feature_result in columns_drift.items():
             is_drifted = feature_result.get("drift_detected", False)
             status = "DRIFTED" if is_drifted else "OK"
@@ -83,9 +82,9 @@ def test_drift_report_generates():
     # This test proves the mechanism works. Phase 9's live deployment
     # will compare real production traffic against training data.
     if dataset_drift:
-        print(f"\nNOTE: Drift was detected, but this test intentionally does not fail.")
-        print(f"Phase 9 will use this mechanism to monitor real production data.")
+        print("\nNOTE: Drift was detected, but this test intentionally does not fail.")
+        print("Phase 9 will use this mechanism to monitor real production data.")
     else:
-        print(f"\nNo drift detected between older and recent data subsets.")
+        print("\nNo drift detected between older and recent data subsets.")
 
-    print(f"\nDrift detection mechanism validated successfully.")
+    print("\nDrift detection mechanism validated successfully.")
