@@ -36,4 +36,14 @@ repos:
         language_version: python3
         pass_filenames: false
         always_run: true
-        additional_dependencies: [pytest, httpx]
+        additional_dependencies:
+          - pytest
+          - httpx
+          - numpy
+          - pandas
+          - scikit-learn
+          - lightgbm
+          - mlflow
+          - skops
+          - fastapi
+          - pyyaml
