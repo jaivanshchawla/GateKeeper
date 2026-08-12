@@ -10,9 +10,12 @@ pytest
 fastapi
 uvicorn
 flask
+flask-cors
 gunicorn
 pre-commit
 detect-secrets
 ruff
 evidently
 requests
+sqlalchemy
+psycopg2-binary

@@ -16,6 +16,7 @@ import os
 import sys
 
 import numpy as np
+import requests
 import skops.io as sio
 import yaml
 
@@ -60,6 +61,39 @@ def get_risk_label(score: float) -> str:
         return "medium"
     else:
         return "high"
+
+
+def log_to_dashboard(issue_type: str, repo: str, details: str, 
+                     commit_hash: str = "", risk_score: int = None):
+    """Log an issue to the dashboard if DASHBOARD_URL is set.
+    
+    This function gracefully degrades if the dashboard is unavailable.
+    It should never cause the gate to fail.
+    """
+    dashboard_url = os.environ.get("DASHBOARD_URL")
+    if not dashboard_url:
+        print("WARNING: DASHBOARD_URL not set, skipping dashboard logging")
+        return
+    
+    try:
+        response = requests.post(
+            f"{dashboard_url}/issues",
+            json={
+                "gate": 2,
+                "type": issue_type,
+                "repo": repo,
+                "details": details,
+                "commit_hash": commit_hash,
+                "risk_score": risk_score,
+            },
+            timeout=5  # Short timeout to avoid blocking
+        )
+        if response.status_code == 201:
+            print(f"Logged issue to dashboard: {issue_type}")
+        else:
+            print(f"WARNING: Dashboard returned status {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"WARNING: Failed to log to dashboard: {e}")
 
 
 def get_notable_factors(features: dict) -> list[str]:
@@ -203,6 +237,17 @@ def main():
     print(markdown)
     print("=" * 60)
 
+    # Log to dashboard if risk is medium or high
+    if risk_label in ["medium", "high"]:
+        repo_name = os.path.basename(repo_path) if repo_path else "unknown"
+        log_to_dashboard(
+            issue_type="high_risk_pr",
+            repo=repo_name,
+            details=f"Risk score: {risk_score:.4f}. Notable factors: {', '.join(factors)}",
+            commit_hash=commit_hash,
+            risk_score=int(risk_score * 100)
+        )
+
     # Also write to a file for GitHub Actions to pick up
     output_file = os.environ.get("GITHUB_OUTPUT")
     if output_file:
@@ -215,6 +260,3 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
-# TODO: fix this later
-x = 42  # unused variable
-def unused_function(): pass

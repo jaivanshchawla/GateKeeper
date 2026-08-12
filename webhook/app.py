@@ -5,11 +5,27 @@ Receives webhook events from GitHub/GitLab for commit analysis.
 """
 
 import os
+import sys
 from datetime import datetime
 
+# Ensure the parent directory is in the path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+# Handle both local development and Docker context
+try:
+    from webhook.routes.dashboard import dashboard_bp
+except ImportError:
+    from routes.dashboard import dashboard_bp
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for dashboard
+
+# Register blueprints
+app.register_blueprint(dashboard_bp)
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -48,10 +64,14 @@ def root():
         "version": "1.0.0",
         "endpoints": {
             "/health": "GET - Health check",
-            "/webhook": "POST - Receive webhook events"
+            "/webhook": "POST - Receive webhook events",
+            "/issues": "GET/POST - List/Create issues",
+            "/issues/<id>": "PATCH - Toggle issue status",
+            "/issues/stats": "GET - Issue statistics"
         }
     }), 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=port, debug=debug)
