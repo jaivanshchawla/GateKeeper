@@ -14,7 +14,7 @@ import numpy as np
 import skops.io as sio
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Load configuration
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "config.yaml")
@@ -28,9 +28,29 @@ config = load_config()
 FEATURE_COLUMNS = config.get("feature_columns", [])
 
 # Pydantic models for request/response
+class Features(BaseModel):
+    """Feature values with validation constraints.
+    
+    All count-based features must be >= 0.
+    Temporal features have specific valid ranges.
+    is_fix_bug_revert is a binary flag (0 or 1).
+    """
+    lines_added: int = Field(..., ge=0, description="Lines of code added")
+    lines_deleted: int = Field(..., ge=0, description="Lines of code deleted")
+    files_touched: int = Field(..., ge=0, description="Number of files modified")
+    dirs_touched: int = Field(..., ge=0, description="Number of directories touched")
+    author_prior_commits: int = Field(..., ge=0, description="Author's total prior commits in repo")
+    hour_of_day: int = Field(..., ge=0, le=23, description="Hour of day (0-23)")
+    day_of_week: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
+    commit_msg_length: int = Field(..., ge=0, description="Commit message length in characters")
+    is_fix_bug_revert: int = Field(..., ge=0, le=1, description="1 if commit contains fix/bug/revert keywords, 0 otherwise")
+    
+    class Config:
+        extra = "allow"  # Allow extra fields (ignored) for backward compatibility
+
 class PredictionRequest(BaseModel):
     """Request model for prediction endpoint."""
-    features: dict  # Dictionary of feature_name: value pairs
+    features: Features
 
 class PredictionResponse(BaseModel):
     """Response model for prediction endpoint."""
@@ -144,24 +164,22 @@ async def health_check():
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
-    """Predict commit risk score."""
+    """Predict commit risk score.
+    
+    Pydantic automatically validates:
+    - All required features are present (Field(...))
+    - Values are integers (int type hints)
+    - Values are within valid ranges (ge, le constraints)
+    """
     if model is None:
         raise HTTPException(
             status_code=503,
             detail="Model not loaded. Please try again later."
         )
     
-    # Validate that all required features are present
-    missing_features = [f for f in FEATURE_COLUMNS if f not in request.features]
-    if missing_features:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Missing required features: {missing_features}"
-        )
-    
     try:
-        # Prepare feature array in correct order
-        feature_values = [request.features[col] for col in FEATURE_COLUMNS]
+        # Prepare feature array in correct order (Pydantic already validated)
+        feature_values = [getattr(request.features, col) for col in FEATURE_COLUMNS]
         features_array = np.array([feature_values])
         
         # Get prediction probability of risky class (class 1)
@@ -175,11 +193,16 @@ async def predict(request: PredictionRequest):
         else:
             risk_label = "high"
         
+        # Get commit hash if provided (optional field)
+        commit_hash = getattr(request.features, "hash", "")
+        
         return PredictionResponse(
             risk_score=risk_score,
             risk_label=risk_label,
-            commit_hash=str(request.features.get("hash", ""))
+            commit_hash=str(commit_hash) if commit_hash else ""
         )
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         raise HTTPException(
             status_code=500,
