@@ -21,11 +21,14 @@ def test_drift_report_generates():
     from evidently.legacy.report import Report
     from evidently.legacy.metric_preset import DataDriftPreset
 
-    # Load data - try multiple paths for compatibility with different environments
+    # Use the committed reference data sample (not the full DVC-tracked CSV)
+    # This sample is stratified to preserve ~45/55 class balance and is
+    # committed directly to git for CI availability.
+    # See: scripts/export_sample.py for how this was generated.
     possible_paths = [
-        os.path.join(os.path.dirname(__file__), "..", "data", "commit_features.csv"),
-        os.path.join(os.getcwd(), "data", "commit_features.csv"),
-        "/app/data/commit_features.csv",  # Docker container path
+        os.path.join(os.path.dirname(__file__), "reference_data_sample.csv"),
+        os.path.join(os.getcwd(), "smoke_tests", "reference_data_sample.csv"),
+        "/app/smoke_tests/reference_data_sample.csv",  # Docker container path
     ]
     
     data_path = None
@@ -35,7 +38,7 @@ def test_drift_report_generates():
             break
     
     if data_path is None:
-        pytest.skip(f"Data file not found in any of: {possible_paths}. Skipping drift test.")
+        pytest.fail(f"Reference data sample not found in any of: {possible_paths}")
 
     df = pd.read_csv(data_path)
     print(f"Loaded {len(df)} rows from commit_features.csv")
