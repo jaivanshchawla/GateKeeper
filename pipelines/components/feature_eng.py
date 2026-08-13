@@ -9,29 +9,28 @@ from kfp import dsl
 @dsl.component(
     packages_to_install=["pandas"],
 )
-def feature_eng(features_path: str) -> str:
+def feature_eng(
+    features_path: dsl.InputPath("Dataset"),
+    engineered_features_path: dsl.OutputPath("Dataset"),
+) -> None:
     """
     Light feature engineering pass-through.
 
-    The existing feature set from extract_features.py is already well-designed.
-    This component validates and optionally adds derived features.
-
     Args:
-        features_path: Path to the features CSV
-
-    Returns:
-        Path to the features CSV (same path, potentially enriched)
+        features_path: Path to the input features CSV.
+        engineered_features_path: KFP output path for the retained features CSV.
     """
+    from pathlib import Path
+
     import pandas as pd
 
     print(f"Loading features from {features_path}")
     df = pd.read_csv(features_path)
     print(f"Loaded {len(df)} rows with {len(df.columns)} columns")
 
-    # Existing feature set is sufficient - no transformation needed
-    # This is intentionally a pass-through. The feature engineering
-    # was done well in Phase 1, and forcing complexity here would be
-    # artificial.
+    output_path = Path(engineered_features_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False)
 
     print(f"Feature engineering complete. {len(df.columns)} features retained.")
-    return features_path
+    print(f"Engineered features saved to {output_path}")

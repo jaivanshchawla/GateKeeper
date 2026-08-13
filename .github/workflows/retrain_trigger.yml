@@ -71,7 +71,8 @@ jobs:
         with:
           name: retrain-pipeline-artifacts
           path: |
-            models/best_model.joblib
+            models/best_model.skops
             models/automl_results.json
+            models/gatekeeper_risk_model.skops
             retrain_pipeline.yaml
           retention-days: 30

@@ -3,21 +3,22 @@
 Gatekeeper Retraining Pipeline (KFP definition).
 
 Defines the genuine @dsl.pipeline for deployment on a KFP server or
-Kubernetes cluster. For local execution, use run_retrain.py instead.
+Kubernetes cluster. For local execution, use run_retrain.py, which runs
+this same graph through kfp.local.
 
 The @dsl.component-decorated functions in pipelines/components/ are
 designed for KFP deployment. kfp.local can run them as subprocesses,
 but requires each component to be self-contained (no local imports).
 
 To run locally:
-    python pipelines/run_retrain.py    # Runs components sequentially
+    python pipelines/run_retrain.py
 
 To compile for KFP:
     python pipelines/retrain_pipeline.py  # Compiles to YAML
 """
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add project root to path for imports
@@ -26,11 +27,12 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from kfp import dsl  # noqa: E402
-from pipelines.components.ingest import ingest  # noqa: E402
-from pipelines.components.feature_eng import feature_eng  # noqa: E402
-from pipelines.components.validate import validate  # noqa: E402
+
 from pipelines.components.automl_search import automl_search  # noqa: E402
+from pipelines.components.feature_eng import feature_eng  # noqa: E402
+from pipelines.components.ingest import ingest  # noqa: E402
 from pipelines.components.register_model import register_model  # noqa: E402
+from pipelines.components.validate import validate  # noqa: E402
 
 
 @dsl.pipeline(
@@ -39,7 +41,9 @@ from pipelines.components.register_model import register_model  # noqa: E402
 )
 def retrain_pipeline(
     repo_url: str = "https://github.com/django/django.git",
-    since_date: str = (datetime.now() - timedelta(days=3 * 365)).strftime("%Y-%m-%d"),
+    since_date: str = (
+        datetime.now(timezone.utc) - timedelta(days=3 * 365)
+    ).strftime("%Y-%m-%d"),
     label_window_days: int = 7,
     min_rows: int = 100,
     min_positive_pct: float = 0.05,
@@ -62,33 +66,31 @@ def retrain_pipeline(
     )
 
     # Step 2: Feature engineering (light pass-through)
-    feature_eng_task = feature_eng(
-        features_path=ingest_task.output,
-    )
+    feature_eng_task = feature_eng(features_path=ingest_task.outputs["features_path"])
 
     # Step 3: Validate features
     validate_task = validate(
-        features_path=feature_eng_task.output,
+        features_path=feature_eng_task.outputs["engineered_features_path"],
         min_rows=min_rows,
         min_positive_pct=min_positive_pct,
     )
 
     # Step 4: AutoML search
     automl_task = automl_search(
-        features_path=validate_task.output,
+        features_path=validate_task.outputs["validated_features_path"],
     )
 
     # Step 5: Register best model
     register_model(
-        model_path=automl_task.output,
+        model_path=automl_task.outputs["model_path"],
+        automl_results_path=automl_task.outputs["automl_results_path"],
     )
 
     # Dependencies are automatically inferred by KFP v2 from data flow:
     # ingest -> feature_eng (via features_path)
     # feature_eng -> validate (via features_path)
     # validate -> automl_search (via features_path)
-    # automl_search -> register_model (via model_path)
-    pass  # No explicit chaining needed in KFP v2
+    # automl_search -> register_model (via model_path and automl_results_path)
 
 
 if __name__ == "__main__":

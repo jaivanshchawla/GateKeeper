@@ -1,392 +1,178 @@
 #!/usr/bin/env python3
 """
-Gatekeeper Retraining Pipeline Runner.
+Run the Gatekeeper retraining pipeline through kfp.local.
 
-This script runs the retraining pipeline locally by executing each component
-sequentially. It serves two purposes:
+This intentionally executes the real @dsl.pipeline graph with
+kfp.local.DockerRunner instead of calling component functions directly.
 
-1. **Local testing**: Validates the pipeline end-to-end without requiring
-   a KFP server or Kubernetes cluster.
-2. **CI/CD**: Can be run in GitHub Actions (Phase 9 will deploy this on a
-   machine with Django cloned).
+DockerRunner is the KFP-recommended runner for local execution. It runs
+each component in an isolated Docker container, providing faithful
+environment isolation while remaining local (no Kubernetes needed).
 
-When a KFP server is available, use `pipelines/retrain_pipeline.py` instead,
-which defines the genuine @dsl.pipeline for deployment.
+Windows workaround: KFP's DockerRunner has Windows-specific issues:
+1. Volume mount strings use colons (source:bind:mode), which conflict
+   with Windows drive letter colons (C:).
+2. os.path.join() produces backslash paths that break in Linux containers.
 
-The components in pipelines/components/ are genuine @dsl.component-decorated
-functions designed for KFP deployment. This runner calls them as regular
-Python functions for local execution.
+This script:
+- Uses Docker Mount API (key/value, not colon-delimited) for mounts
+- Patches os.path.join within KFP to use forward slashes
+- Mounts pipeline_root at /C:<rest-of-path> so executor URIs resolve
+  inside Linux containers (C: becomes a valid Linux directory name).
 """
 
-import json
-import subprocess
+import argparse
+import os
 import sys
-import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-def log_step(step_num, name):
-    """Print a formatted step header."""
-    print(f"\n{'='*60}")
-    print(f"Step {step_num}: {name}")
-    print(f"{'='*60}")
-    start = time.time()
-    return start
+# --- Windows Docker fixes ---
+if sys.platform == "win32":
+    # Fix 1: os.path.join → forward slashes (KFP uses it for executor URIs)
+    _orig_join = os.path.join
 
+    def _fwd_join(*args):
+        return _orig_join(*args).replace("\\", "/")
 
-def log_complete(start_time, name):
-    """Print step completion with timing."""
-    elapsed = time.time() - start_time
-    print(f"\n[PASS] {name} completed in {elapsed:.1f}s")
+    os.path.join = _fwd_join
 
+    # Fix 2: Use Docker Mount API instead of volumes dict
+    import docker as _docker
+    import kfp.local.docker_task_handler as _dth
 
-def step_ingest():
-    """Step 1: Clone repo and extract features."""
-    start = log_step(1, "INGEST - Clone & Extract Features")
+    _original_run = _dth.run_docker_container
 
-    # Load params
-    params_path = PROJECT_ROOT / "params.yaml"
-    import yaml
-    with open(params_path) as f:
-        params = yaml.safe_load(f)
-
-    repo_url = "https://github.com/django/django.git"
-    since_date = params.get("since", "2023-08-09")
-    label_window_days = 7
-
-    # Clone/pull the repo
-    repo_path = Path("../../django").resolve()
-    if not repo_path.exists():
-        print(f"Cloning {repo_url}...")
-        subprocess.run(
-            ["git", "clone", repo_url, str(repo_path)],
-            check=True,
-            timeout=600,
-        )
-    else:
-        print(f"Pulling existing repo at {repo_path}...")
-        subprocess.run(["git", "-C", str(repo_path), "pull"], check=True)
-
-    # Extract features
-    from ml.extract_features import CommitFeatureExtractor
-
-    extractor = CommitFeatureExtractor(
-        repo_path=str(repo_path),
-        since=since_date,
-        label_window_days=label_window_days,
-    )
-
-    output_path = str(PROJECT_ROOT / "data" / "commit_features.csv")
-    extractor.extract_and_save(output_path)
-
-    log_complete(start, "INGEST")
-    return output_path
-
-
-def step_feature_eng(features_path):
-    """Step 2: Light feature engineering pass-through."""
-    start = log_step(2, "FEATURE ENG - Pass-through")
-
-    import pandas as pd
-
-    df = pd.read_csv(features_path)
-    print(f"Loaded {len(df)} rows with {len(df.columns)} columns")
-    print(f"Columns: {list(df.columns)}")
-
-    # Existing feature set is sufficient — no transformation needed
-    print("Feature set is well-designed from Phase 1. No transformation needed.")
-
-    log_complete(start, "FEATURE ENG")
-    return features_path
-
-
-def step_validate(features_path):
-    """Step 3: Validate features (row count, class balance, schema)."""
-    start = log_step(3, "VALIDATE - Sanity Checks")
-
-    import pandas as pd
-    import yaml
-
-    df = pd.read_csv(features_path)
-    total_rows = len(df)
-    print(f"Total rows: {total_rows}")
-
-    # 1. Row count
-    min_rows = 100
-    if total_rows < min_rows:
-        raise ValueError(f"FAIL: Only {total_rows} rows, need >= {min_rows}")
-    print(f"[PASS] Row count OK: {total_rows} >= {min_rows}")
-
-    # 2. Class balance
-    positive_count = int(df["risky"].sum())
-    positive_pct = positive_count / total_rows
-    print(f"Class balance: {positive_count} positive ({positive_pct:.2%}), "
-          f"{total_rows - positive_count} negative ({1 - positive_pct:.2%})")
-
-    if positive_pct < 0.05:
-        print(f"[WARN] Positive class below 5% ({positive_pct:.2%})")
-    else:
-        print(f"[PASS] Class balance OK: {positive_pct:.2%} >= 5%")
-
-    # 3. Schema check
-    config_path = PROJECT_ROOT / "ml" / "config.yaml"
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-    expected = config.get("feature_columns", []) + ["risky", "hash"]
-    missing = [c for c in expected if c not in df.columns]
-    if missing:
-        raise ValueError(f"FAIL: Missing columns: {missing}")
-    print(f"[PASS] Schema OK: All {len(expected)} expected columns present")
-
-    print("\nAll validations passed!")
-    log_complete(start, "VALIDATE")
-    return features_path
-
-
-def step_automl(features_path):
-    """Step 4: AutoML search — compare LightGBM, RandomForest, LogisticRegression."""
-    start = log_step(4, "AUTOML SEARCH - Model Comparison")
-
-    import yaml
-    import pandas as pd
-    import joblib
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import (
-        accuracy_score, precision_score, recall_score, f1_score,
-    )
-
-    try:
-        import lightgbm as lgb
-        HAS_LGBM = True
-    except ImportError:
-        HAS_LGBM = False
-        print("WARNING: LightGBM not available, skipping it")
-
-    # Load config
-    config_path = PROJECT_ROOT / "ml" / "config.yaml"
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-    feature_columns = config.get("feature_columns", [])
-    lgbm_params = config.get("lightgbm_params", {})
-
-    # Load features
-    df = pd.read_csv(features_path)
-    X = df[feature_columns]
-    y = df["risky"]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
-    print(f"Features: {feature_columns}")
-
-    # Define models
-    models = {}
-    if HAS_LGBM:
-        models["lightgbm"] = lgb.LGBMClassifier(**lgbm_params)
-    models["random_forest"] = RandomForestClassifier(
-        n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
-    )
-    models["logistic_regression"] = LogisticRegression(
-        max_iter=1000, random_state=42, class_weight="balanced"
-    )
-
-    # Train and evaluate
-    results = {}
-    best_f1 = -1
-    best_model_name = None
-    best_model = None
-
-    for name, model in models.items():
-        print(f"\nTraining {name}...")
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-
-        metrics = {
-            "accuracy": float(accuracy_score(y_test, y_pred)),
-            "precision": float(precision_score(y_test, y_pred, zero_division=0)),
-            "recall": float(recall_score(y_test, y_pred, zero_division=0)),
-            "f1": float(f1_score(y_test, y_pred, zero_division=0)),
-        }
-        results[name] = metrics
-        print(f"  F1={metrics['f1']:.4f}  Acc={metrics['accuracy']:.4f}  "
-              f"Prec={metrics['precision']:.4f}  Rec={metrics['recall']:.4f}")
-
-        if metrics["f1"] > best_f1:
-            best_f1 = metrics["f1"]
-            best_model_name = name
-            best_model = model
-
-    print(f"\n{'='*60}")
-    print("AutoML Search Results:")
-    print(f"{'='*60}")
-    for name, m in sorted(results.items(), key=lambda x: x[1]["f1"], reverse=True):
-        marker = " << BEST" if name == best_model_name else ""
-        print(f"  {name}: F1={m['f1']:.4f}{marker}")
-    print(f"{'='*60}")
-    print(f"Best model: {best_model_name} (F1={best_f1:.4f})")
-
-    # Save model and results
-    output_dir = PROJECT_ROOT / "models"
-    output_dir.mkdir(exist_ok=True)
-
-    model_path = output_dir / "best_model.joblib"
-    joblib.dump(best_model, model_path)
-
-    results_path = output_dir / "automl_results.json"
-    with open(results_path, "w") as f:
-        json.dump({"best_model": best_model_name, "results": results, "feature_columns": feature_columns}, f, indent=2)
-
-    print(f"\nBest model saved to {model_path}")
-    log_complete(start, "AUTOML SEARCH")
-    return str(model_path)
-
-
-def step_register(model_path):
-    """Step 5: Register the best model to MLflow, compare with current production."""
-    start = log_step(5, "REGISTER MODEL - MLflow Registry")
-
-    import mlflow
-    import mlflow.sklearn
-    import joblib
-
-    tracking_uri = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment("gatekeeper")
-
-    # Load the new model
-    new_model = joblib.load(model_path)
-    print(f"Model type: {type(new_model).__name__}")
-
-    # Load AutoML results
-    results_path = PROJECT_ROOT / "models" / "automl_results.json"
-    new_metrics = {}
-    if results_path.exists():
-        with open(results_path) as f:
-            automl_results = json.load(f)
-        best_model_name = automl_results["best_model"]
-        new_metrics = automl_results["results"].get(best_model_name, {})
-        print(f"New model ({best_model_name}) F1: {new_metrics.get('f1', 'N/A')}")
-
-    # Check existing registered model
-    model_name = "GatekeeperRiskPredictor"
-    current_f1 = 0
-    current_version = None
-
-    try:
-        client = mlflow.tracking.MlflowClient()
-        versions = client.search_model_versions(f"name='{model_name}'")
-        if versions:
-            latest = max(versions, key=lambda v: int(v.version))
-            current_version = latest.version
-            run = client.get_run(latest.run_id)
-            current_f1 = run.data.metrics.get("f1", 0)
-            print(f"Current registered model: v{current_version}, F1={current_f1:.4f}")
-    except Exception as e:
-        print(f"No existing model registered: {e}")
-
-    new_f1 = new_metrics.get("f1", 0)
-    should_promote = new_f1 > current_f1 if current_version else True
-
-    print(f"\n{'='*60}")
-    print("Model Promotion Decision:")
-    print(f"  New model F1: {new_f1:.4f}")
-    print(f"  Current model F1: {current_f1:.4f}")
-    if should_promote:
-        print("  Decision: PROMOTE (new model is better)")
-    else:
-        print("  Decision: KEEP current model (new model is not better)")
-    print(f"{'='*60}")
-
-    # Log to MLflow
-    with mlflow.start_run() as run:
-        mlflow.log_params({
-            "model_type": type(new_model).__name__,
-            "source": "retrain_pipeline",
-            "promoted": str(should_promote),
-        })
-        if new_metrics:
-            mlflow.log_metrics(new_metrics)
-        mlflow.sklearn.log_model(
-            new_model, "model",
-            registered_model_name=model_name,
-            skops_trusted_types=[
-                "collections.OrderedDict",
-                "lightgbm.basic.Booster",
-                "lightgbm.sklearn.LGBMClassifier",
-                "numpy.dtype",
-                "numpy.ndarray",
-            ],
-        )
-        print(f"Model logged. Run ID: {run.info.run_id}")
-
-    # Promote to Production if better
-    if should_promote:
-        try:
-            client = mlflow.tracking.MlflowClient()
-            versions = client.search_model_versions(f"name='{model_name}'")
-            latest = max(versions, key=lambda v: int(v.version))
-            client.transition_model_version_stage(
-                name=model_name, version=latest.version, stage="Production",
+    def _fixed_run(client, image, command, volumes, **kwargs):
+        """Convert volumes dict to Docker Mount objects."""
+        mounts = []
+        for src, cfg in volumes.items():
+            src_f = src.replace("\\", "/")
+            bind_f = cfg["bind"].replace("\\", "/")
+            # The container target must be a Linux-style path.
+            # KFP sets both source=bind=pipeline_root (Windows path like C:/Temp/x).
+            # On Linux, C: is just a directory name, so mount to /C:/Temp/x.
+            if not bind_f.startswith("/"):
+                bind_f = "/" + bind_f
+            mounts.append(
+                _docker.types.Mount(
+                    target=bind_f,
+                    source=src_f,
+                    type="bind",
+                    read_only=False,
+                )
             )
-            print(f"Model v{latest.version} promoted to Production")
-        except Exception as e:
-            print(f"Note: Could not transition to Production: {e}")
 
-    status = (f"{'Promoted to Production' if should_promote else 'Kept current model'}. "
-              f"New F1={new_f1:.4f}, Previous F1={current_f1:.4f}")
-    log_complete(start, "REGISTER MODEL")
-    return status
+        kwargs.pop("volumes", None)
+        # Ensure container uses UTF-8 encoding (fixes Unicode in PyCaret/KFP logs)
+        env = kwargs.pop("environment", None) or {}
+        env.setdefault("PYTHONUTF8", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        return _original_run(client, image, command, volumes={}, mounts=mounts, environment=env, **kwargs)
+
+    _dth.run_docker_container = _fixed_run
+
+from kfp import local  # noqa: E402
+
+from pipelines.retrain_pipeline import retrain_pipeline  # noqa: E402
 
 
-def main():
-    """Run the full retraining pipeline."""
+def _default_since_date() -> str:
+    params_path = PROJECT_ROOT / "params.yaml"
+    if params_path.exists():
+        with open(params_path, "r") as f:
+            params = yaml.safe_load(f) or {}
+        if params.get("since"):
+            return str(params["since"])
+    return (datetime.now(timezone.utc) - timedelta(days=3 * 365)).strftime("%Y-%m-%d")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the Gatekeeper retraining DAG using kfp.local."
+    )
+    parser.add_argument(
+        "--repo-url",
+        default="https://github.com/django/django.git",
+        help="Git repository URL or local path to mine (host-side path).",
+    )
+    parser.add_argument(
+        "--since-date",
+        default=_default_since_date(),
+        help="Date to start mining commits from (YYYY-MM-DD).",
+    )
+    parser.add_argument(
+        "--label-window-days",
+        type=int,
+        default=7,
+        help="Window for risky commit labeling.",
+    )
+    parser.add_argument(
+        "--min-rows",
+        type=int,
+        default=100,
+        help="Minimum number of extracted rows required.",
+    )
+    parser.add_argument(
+        "--min-positive-pct",
+        type=float,
+        default=0.05,
+        help="Minimum positive class fraction before warning.",
+    )
+    parser.add_argument(
+        "--pipeline-root",
+        default=str(PROJECT_ROOT / "local_outputs" / "retrain"),
+        help="Directory for kfp.local task outputs.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    # Normalize to forward slashes
+    pipeline_root = str(Path(args.pipeline_root).resolve()).replace("\\", "/")
+
+    # On Windows, compute the container-side path for repo_url
+    # pipeline_root on host: C:/Temp/gk_retrain
+    # pipeline_root in container: /C:/Temp/gk_retrain (C: becomes dir name)
+    container_root = "/" + pipeline_root if not pipeline_root.startswith("/") else pipeline_root
+
     print("=" * 60)
-    print("GATEKEEPER RETRAINING PIPELINE")
-    print(f"Started at: {datetime.now()}")
+    print("Running Gatekeeper retraining DAG with kfp.local.DockerRunner")
+    print("=" * 60)
     print(f"Project root: {PROJECT_ROOT}")
-    print("=" * 60)
+    print(f"Pipeline root (host): {pipeline_root}")
+    print(f"Pipeline root (container): {container_root}")
+    print()
 
-    total_start = time.time()
+    local.init(
+        runner=local.DockerRunner(),
+        pipeline_root=pipeline_root,
+        raise_on_error=True,
+        enable_caching=False,
+    )
 
-    try:
-        # Step 1: Ingest
-        features_path = step_ingest()
+    # Convert repo_url to container-accessible path if it's a local path
+    repo_url = args.repo_url
+    if Path(repo_url).exists():
+        # Local path — translate to container-side path
+        abs_repo = str(Path(repo_url).resolve()).replace("\\", "/")
+        repo_url = "/" + abs_repo
+        print(f"Translated repo path to container: {repo_url}")
 
-        # Step 2: Feature Engineering
-        features_path = step_feature_eng(features_path)
-
-        # Step 3: Validate
-        features_path = step_validate(features_path)
-
-        # Step 4: AutoML Search
-        model_path = step_automl(features_path)
-
-        # Step 5: Register Model
-        status = step_register(model_path)
-
-        total_elapsed = time.time() - total_start
-        print(f"\n{'='*60}")
-        print("PIPELINE COMPLETE")
-        print(f"Total time: {total_elapsed:.1f}s")
-        print(f"Status: {status}")
-        print(f"Completed at: {datetime.now()}")
-        print(f"{'='*60}")
-
-    except Exception as e:
-        total_elapsed = time.time() - total_start
-        print(f"\n{'='*60}")
-        print(f"PIPELINE FAILED after {total_elapsed:.1f}s")
-        print(f"Error: {e}")
-        print(f"{'='*60}")
-        raise
+    retrain_pipeline(
+        repo_url=repo_url,
+        since_date=args.since_date,
+        label_window_days=args.label_window_days,
+        min_rows=args.min_rows,
+        min_positive_pct=args.min_positive_pct,
+    )
 
 
 if __name__ == "__main__":
