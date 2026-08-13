@@ -1,0 +1,34 @@
+{
+  "best_model": "random_forest",
+  "results": {
+    "lightgbm": {
+      "accuracy": 0.7021996615905245,
+      "precision": 0.7048458149779736,
+      "recall": 0.5947955390334573,
+      "f1": 0.6451612903225806
+    },
+    "random_forest": {
+      "accuracy": 0.7309644670050761,
+      "precision": 0.7391304347826086,
+      "recall": 0.6319702602230484,
+      "f1": 0.6813627254509018
+    },
+    "logistic_regression": {
+      "accuracy": 0.6700507614213198,
+      "precision": 0.6554621848739496,
+      "recall": 0.5799256505576208,
+      "f1": 0.6153846153846154
+    }
+  },
+  "feature_columns": [
+    "lines_added",
+    "lines_deleted",
+    "files_touched",
+    "dirs_touched",
+    "author_prior_commits",
+    "hour_of_day",
+    "day_of_week",
+    "commit_msg_length",
+    "is_fix_bug_revert"
+  ]
+}

@@ -19,3 +19,5 @@ evidently
 requests
 sqlalchemy
 psycopg2-binary
+kfp
+joblib

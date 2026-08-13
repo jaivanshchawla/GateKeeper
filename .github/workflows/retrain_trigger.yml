@@ -1,0 +1,77 @@
+name: Retrain Gatekeeper Model
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      since_date:
+        description: "Date to start mining commits from (YYYY-MM-DD)"
+        required: false
+        default: ""
+      label_window_days:
+        description: "Window for risky commit labeling"
+        required: false
+        default: "7"
+
+  # Weekly schedule - every Sunday at 2 AM UTC
+  schedule:
+    - cron: "0 2 * * 0"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # Long running - mining commits from a large repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Need full history for git operations
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run retraining pipeline
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+          DASHBOARD_URL: ""  # Graceful degradation when unset
+        run: |
+          # NOTE: This workflow won't have access to a full Django clone
+          # in CI (same constraint as Gates 2/3). For a production deployment,
+          # you would need to either:
+          # 1. Set up a persistent cache of the cloned repo
+          # 2. Use a shallow clone with a specific depth
+          # 3. Store features in a shared storage (DVC remote, S3, etc.)
+          #
+          # For now, this validates the pipeline syntax and component imports.
+          # The full pipeline run should be done locally or on a machine with
+          # the Django repo available.
+
+          python pipelines/retrain_pipeline.py
+
+      - name: Run tests
+        if: always()
+        run: |
+          pytest tests/ -v
+
+      - name: Upload pipeline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-pipeline-artifacts
+          path: |
+            models/best_model.joblib
+            models/automl_results.json
+            retrain_pipeline.yaml
+          retention-days: 30
