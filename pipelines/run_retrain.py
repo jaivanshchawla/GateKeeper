@@ -2,26 +2,24 @@
 """
 Run the Gatekeeper retraining pipeline through kfp.local.
 
-This intentionally executes the real @dsl.pipeline graph with
-kfp.local.DockerRunner instead of calling component functions directly.
+Windows Docker compatibility for KFP's DockerRunner.
 
-DockerRunner is the KFP-recommended runner for local execution. It runs
-each component in an isolated Docker container, providing faithful
-environment isolation while remaining local (no Kubernetes needed).
+Key problem: KFP uses os.path.join() to construct executor URIs.
+On Windows, this produces C:\\Temp\\... (backslashes) which break in Linux
+containers. We patch os.path.join to produce /C:/Temp/... (forward slashes,
+absolute Linux paths). But KFP on the host also uses these paths to read
+output files — and /C:/... is invalid on Windows.
 
-Windows workaround: KFP's DockerRunner has Windows-specific issues:
-1. Volume mount strings use colons (source:bind:mode), which conflict
-   with Windows drive letter colons (C:).
-2. os.path.join() produces backslash paths that break in Linux containers.
+Solution: patch both os.path.join AND builtins.open:
+- os.path.join: C:\\Temp\\... → /C:/Temp/... (for container)
+- builtins.open: /C:/Temp/... → C:/Temp/... (for host-side reading)
 
-This script:
-- Uses Docker Mount API (key/value, not colon-delimited) for mounts
-- Patches os.path.join within KFP to use forward slashes
-- Mounts pipeline_root at /C:<rest-of-path> so executor URIs resolve
-  inside Linux containers (C: becomes a valid Linux directory name).
+IMPORTANT: All patches are applied AFTER local.init() because it uses
+tempfile which would break with the patched os.path.join.
 """
 
 import argparse
+import builtins
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -33,17 +31,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# --- Windows Docker fixes ---
+# Docker Mount fix is safe to apply at import time (no os.path interaction)
 if sys.platform == "win32":
-    # Fix 1: os.path.join → forward slashes (KFP uses it for executor URIs)
-    _orig_join = os.path.join
-
-    def _fwd_join(*args):
-        return _orig_join(*args).replace("\\", "/")
-
-    os.path.join = _fwd_join
-
-    # Fix 2: Use Docker Mount API instead of volumes dict
     import docker as _docker
     import kfp.local.docker_task_handler as _dth
 
@@ -55,9 +44,6 @@ if sys.platform == "win32":
         for src, cfg in volumes.items():
             src_f = src.replace("\\", "/")
             bind_f = cfg["bind"].replace("\\", "/")
-            # The container target must be a Linux-style path.
-            # KFP sets both source=bind=pipeline_root (Windows path like C:/Temp/x).
-            # On Linux, C: is just a directory name, so mount to /C:/Temp/x.
             if not bind_f.startswith("/"):
                 bind_f = "/" + bind_f
             mounts.append(
@@ -68,9 +54,7 @@ if sys.platform == "win32":
                     read_only=False,
                 )
             )
-
         kwargs.pop("volumes", None)
-        # Ensure container uses UTF-8 encoding (fixes Unicode in PyCaret/KFP logs)
         env = kwargs.pop("environment", None) or {}
         env.setdefault("PYTHONUTF8", "1")
         env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -97,60 +81,82 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the Gatekeeper retraining DAG using kfp.local."
     )
-    parser.add_argument(
-        "--repo-url",
-        default="https://github.com/django/django.git",
-        help="Git repository URL or local path to mine (host-side path).",
-    )
-    parser.add_argument(
-        "--since-date",
-        default=_default_since_date(),
-        help="Date to start mining commits from (YYYY-MM-DD).",
-    )
-    parser.add_argument(
-        "--label-window-days",
-        type=int,
-        default=7,
-        help="Window for risky commit labeling.",
-    )
-    parser.add_argument(
-        "--min-rows",
-        type=int,
-        default=100,
-        help="Minimum number of extracted rows required.",
-    )
-    parser.add_argument(
-        "--min-positive-pct",
-        type=float,
-        default=0.05,
-        help="Minimum positive class fraction before warning.",
-    )
-    parser.add_argument(
-        "--pipeline-root",
-        default=str(PROJECT_ROOT / "local_outputs" / "retrain"),
-        help="Directory for kfp.local task outputs.",
-    )
+    parser.add_argument("--repo-url", default="https://github.com/django/django.git")
+    parser.add_argument("--since-date", default=_default_since_date())
+    parser.add_argument("--label-window-days", type=int, default=7)
+    parser.add_argument("--min-rows", type=int, default=100)
+    parser.add_argument("--min-positive-pct", type=float, default=0.05)
+    parser.add_argument("--pipeline-root", default=str(PROJECT_ROOT / "local_outputs" / "retrain"))
     return parser.parse_args()
+
+
+def _normalize_path(path_str: str) -> str:
+    """Normalize a Windows path to forward slashes, stripping extended-length prefix."""
+    resolved = str(Path(path_str).resolve())
+    resolved = resolved.removeprefix("\\\\?\\")
+    return resolved.replace("\\", "/")
+
+
+def _translate_c_drive(path):
+    """Translate /C:/... to C:/... on Windows host."""
+    if isinstance(path, str) and len(path) >= 4 and path.startswith("/"):
+        translated = path[1:]
+        if len(translated) >= 2 and translated[1] == ":":
+            return translated
+    return path
+
+
+def _apply_windows_patches():
+    """Apply patches for Docker container compatibility.
+
+    os.path.join: produces /C:/... paths (valid inside Linux containers)
+    os.path.exists/isfile/open: translates /C:/... back to C:/... (valid on Windows host)
+    """
+    _orig_join = os.path.join
+
+    def _fwd_join(*args):
+        result = _orig_join(*args).replace("\\", "/")
+        if len(result) >= 2 and result[1] == ":" and not result.startswith("/"):
+            result = "/" + result
+        return result
+
+    os.path.join = _fwd_join
+
+    _orig_exists = os.path.exists
+    _orig_isfile = os.path.isfile
+    _orig_open = builtins.open
+    _orig_getsize = os.path.getsize
+
+    def _host_exists(path):
+        return _orig_exists(_translate_c_drive(path))
+
+    def _host_isfile(path):
+        return _orig_isfile(_translate_c_drive(path))
+
+    def _host_open(file, *args, **kwargs):
+        return _orig_open(_translate_c_drive(file), *args, **kwargs)
+
+    def _host_getsize(path):
+        return _orig_getsize(_translate_c_drive(path))
+
+    os.path.exists = _host_exists
+    os.path.isfile = _host_isfile
+    builtins.open = _host_open
+    os.path.getsize = _host_getsize
 
 
 def main() -> None:
     args = parse_args()
-    # Normalize to forward slashes
-    pipeline_root = str(Path(args.pipeline_root).resolve()).replace("\\", "/")
-
-    # On Windows, compute the container-side path for repo_url
-    # pipeline_root on host: C:/Temp/gk_retrain
-    # pipeline_root in container: /C:/Temp/gk_retrain (C: becomes dir name)
-    container_root = "/" + pipeline_root if not pipeline_root.startswith("/") else pipeline_root
+    pipeline_root = _normalize_path(args.pipeline_root)
 
     print("=" * 60)
     print("Running Gatekeeper retraining DAG with kfp.local.DockerRunner")
     print("=" * 60)
     print(f"Project root: {PROJECT_ROOT}")
-    print(f"Pipeline root (host): {pipeline_root}")
-    print(f"Pipeline root (container): {container_root}")
+    print(f"Pipeline root: {pipeline_root}")
     print()
 
+    # Step 1: Initialize KFP (calls tempfile.mkdtemp — must NOT be patched yet)
     local.init(
         runner=local.DockerRunner(),
         pipeline_root=pipeline_root,
@@ -158,11 +164,28 @@ def main() -> None:
         enable_caching=False,
     )
 
-    # Convert repo_url to container-accessible path if it's a local path
+    # Step 2: Apply Docker compatibility patches AFTER init
+    if sys.platform == "win32":
+        _apply_windows_patches()
+
+    # Step 2b: Set up cached CSV if data/commit_features.csv is fresh
+    cached_csv_container_path = ""
+    host_csv = PROJECT_ROOT / "data" / "commit_features.csv"
+    if host_csv.exists():
+        import shutil
+
+        # Copy to pipeline root so Docker containers can access it
+        pipeline_root_dir = Path(pipeline_root)
+        pipeline_root_dir.mkdir(parents=True, exist_ok=True)
+        dest = pipeline_root_dir / "cached_features.csv"
+        shutil.copy2(host_csv, dest)
+        # Inside the container, pipeline_root is at /<normalized_pipeline_root>
+        cached_csv_container_path = "/" + str(dest).replace("\\", "/")
+        print(f"Cached CSV copied to container path: {cached_csv_container_path}")
+
     repo_url = args.repo_url
     if Path(repo_url).exists():
-        # Local path — translate to container-side path
-        abs_repo = str(Path(repo_url).resolve()).replace("\\", "/")
+        abs_repo = _normalize_path(repo_url)
         repo_url = "/" + abs_repo
         print(f"Translated repo path to container: {repo_url}")
 
@@ -172,6 +195,7 @@ def main() -> None:
         label_window_days=args.label_window_days,
         min_rows=args.min_rows,
         min_positive_pct=args.min_positive_pct,
+        cached_csv_path=cached_csv_container_path,
     )
 
 

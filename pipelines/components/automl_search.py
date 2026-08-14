@@ -1,17 +1,17 @@
 """
 AutoML search component for the Gatekeeper retraining pipeline.
-Uses PyCaret to compare candidate classifiers and exports the winner as skops.
+Compares LightGBM, RandomForest, and LogisticRegression, selects best by F1.
 """
 
 from kfp import dsl
 
 
 @dsl.component(
+    base_image="gatekeeper-kfp-base",
     packages_to_install=[
         "pandas",
         "lightgbm",
-        "pycaret",
-        "pyyaml",
+        "scikit-learn",
         "skops",
     ],
 )
@@ -21,43 +21,38 @@ def automl_search(
     automl_results_path: dsl.OutputPath("JSON"),
 ) -> None:
     """
-    Run PyCaret AutoML over the supported model families.
+    Compare LightGBM, RandomForest, LogisticRegression and pick the best by F1.
 
     Args:
         features_path: Path to the validated features CSV.
         model_path: KFP output path for the best skops model.
-        automl_results_path: KFP output path for the automl results JSON
-            (best model name, all model metrics, feature columns).
+        automl_results_path: KFP output path for the automl results JSON.
     """
     import json
     from pathlib import Path
 
     import pandas as pd
     import skops.io as sio
-    import yaml
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.model_selection import train_test_split
 
     try:
-        from pycaret.classification import compare_models, finalize_model, pull, setup
-    except ImportError as exc:
-        raise RuntimeError(
-            "PyCaret is required for the retraining AutoML search. "
-            "Install project requirements before running the pipeline."
-        ) from exc
+        from lightgbm import LGBMClassifier
+    except ImportError:
+        LGBMClassifier = None
 
-    # Derive project root from model_path parent if available, else cwd
-    # model_path is at {pipeline_root}/{run_name}/automl_search/model
-    # In Docker, Path.cwd() may be / so we try to find config relative to
-    # the output artifact location, or fall back to cwd.
-    model_dir = Path(model_path).parent
-    project_root = model_dir.parent.parent.parent if model_dir.exists() else Path.cwd()
-
-    # Try to load feature columns from config
-    config_path = project_root / "ml" / "config.yaml"
-    feature_columns = []
-    if config_path.exists():
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f) or {}
-        feature_columns = config.get("feature_columns", [])
+    try:
+        import yaml
+        config_path = Path.cwd().parent.parent.parent / "ml" / "config.yaml"
+        feature_columns = []
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f) or {}
+            feature_columns = config.get("feature_columns", [])
+    except (OSError, ValueError, KeyError):
+        feature_columns = []
 
     print(f"Loading features from {features_path}")
     df = pd.read_csv(features_path)
@@ -72,71 +67,64 @@ def automl_search(
             and df[col].dtype in ["int64", "float64", "int32", "float32"]
         ]
 
-    training_df = df[feature_columns + ["risky"]].copy()
+    X = df[feature_columns].values
+    y = df["risky"].values
     print(f"Features: {feature_columns}")
 
-    setup(
-        data=training_df,
-        target="risky",
-        train_size=0.8,
-        session_id=42,
-        fold=3,
-        html=False,
-        verbose=True,
-        system_log=False,
-        n_jobs=-1,
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
+    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
 
-    candidate_model_ids = ["lightgbm", "rf", "lr"]
-    print(f"Running PyCaret compare_models(include={candidate_model_ids}, sort='F1')")
-    best_model = compare_models(
-        include=candidate_model_ids,
-        sort="F1",
-        n_select=1,
-        fold=3,
-    )
-    leaderboard = pull()
-    print("\nPyCaret leaderboard:")
-    print(leaderboard.to_string())
-
-    final_model = finalize_model(best_model)
-    serving_model = final_model
-    if hasattr(final_model, "steps") and final_model.steps:
-        serving_model = final_model.steps[-1][1]
-        print(
-            "Extracted fitted estimator from PyCaret pipeline for serving: "
-            f"{type(serving_model).__name__}"
+    candidates = {}
+    if LGBMClassifier is not None:
+        candidates["lightgbm"] = LGBMClassifier(
+            num_leaves=31, learning_rate=0.05, n_estimators=100,
+            random_state=42, verbose=-1
         )
+    candidates["random_forest"] = RandomForestClassifier(
+        n_estimators=100, random_state=42
+    )
+    candidates["logistic_regression"] = LogisticRegression(
+        max_iter=1000, random_state=42
+    )
 
-    best_model_name = str(leaderboard.iloc[0].get("Model", type(serving_model).__name__))
-    print(f"Best model: {best_model_name} ({type(serving_model).__name__})")
-
-    metric_columns = {
-        "accuracy": "Accuracy",
-        "auc": "AUC",
-        "recall": "Recall",
-        "precision": "Prec.",
-        "f1": "F1",
-        "kappa": "Kappa",
-        "mcc": "MCC",
-    }
     results = {}
-    for _, row in leaderboard.iterrows():
-        model_name = str(row.get("Model", "unknown"))
-        results[model_name] = {
-            output_name: float(row[column])
-            for output_name, column in metric_columns.items()
-            if column in leaderboard.columns and pd.notna(row[column])
-        }
+    best_model = None
+    best_f1 = -1.0
+    best_name = ""
 
+    for name, model in candidates.items():
+        print(f"\nTraining {name}...")
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        f1 = f1_score(y_test, y_pred)
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0)
+        rec = recall_score(y_test, y_pred, zero_division=0)
+        print(f"  F1={f1:.4f}  Acc={acc:.4f}  Prec={prec:.4f}  Rec={rec:.4f}")
+        results[name] = {
+            "f1": float(f1),
+            "accuracy": float(acc),
+            "precision": float(prec),
+            "recall": float(rec),
+        }
+        if f1 > best_f1:
+            best_f1 = f1
+            best_model = model
+            best_name = name
+
+    print(f"\nBest model: {best_name} (F1={best_f1:.4f})")
+
+    # Save best model as skops
     output_model_path = Path(model_path)
     output_model_path.parent.mkdir(parents=True, exist_ok=True)
-    sio.dump(serving_model, output_model_path)
+    sio.dump(best_model, output_model_path)
     print(f"Best model saved to {output_model_path}")
 
-    # Write automl results as KFP artifact (not to Path.cwd())
+    # Save automl results as KFP artifact
     automl_output = {
-        "best_model": best_model_name,
+        "best_model": best_name,
         "results": results,
         "feature_columns": feature_columns,
     }

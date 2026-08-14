@@ -8,6 +8,7 @@ from kfp import dsl
 
 
 @dsl.component(
+    base_image="gatekeeper-kfp-base",
     packages_to_install=[
         "mlflow",
         "scikit-learn",

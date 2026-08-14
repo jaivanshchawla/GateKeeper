@@ -47,6 +47,7 @@ def retrain_pipeline(
     label_window_days: int = 7,
     min_rows: int = 100,
     min_positive_pct: float = 0.05,
+    cached_csv_path: str = "",
 ):
     """
     End-to-end retraining pipeline for KFP deployment.
@@ -57,12 +58,14 @@ def retrain_pipeline(
         label_window_days: Window for risky commit labeling
         min_rows: Minimum row count for validation
         min_positive_pct: Minimum positive class fraction
+        cached_csv_path: If set, ingest reuses this CSV instead of mining
     """
     # Step 1: Ingest — clone repo and extract features
     ingest_task = ingest(
         repo_url=repo_url,
         since_date=since_date,
         label_window_days=label_window_days,
+        cached_csv_path=cached_csv_path,
     )
 
     # Step 2: Feature engineering (light pass-through)

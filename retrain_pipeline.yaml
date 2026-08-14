@@ -2,11 +2,12 @@
 # Name: gatekeeper-retrain-pipeline
 # Description: Retrain the Gatekeeper risk prediction model
 # Inputs:
+#    cached_csv_path: str [Default: '']
 #    label_window_days: int [Default: 7.0]
 #    min_positive_pct: float [Default: 0.05]
 #    min_rows: int [Default: 100.0]
 #    repo_url: str [Default: 'https://github.com/django/django.git']
-#    since_date: str [Default: '2023-08-14']
+#    since_date: str [Default: '2023-08-15']
 components:
   comp-automl-search:
     executorLabel: exec-automl-search
@@ -46,6 +47,15 @@ components:
     executorLabel: exec-ingest
     inputDefinitions:
       parameters:
+        cached_csv_path:
+          defaultValue: ''
+          description: 'If non-empty and file exists, copy this CSV
+
+            to features_path instead of re-mining (saves ~9 min on
+
+            large repos).'
+          isOptional: true
+          parameterType: STRING
         label_window_days:
           defaultValue: 7.0
           description: Days after commit to check for re-touches.
@@ -124,7 +134,7 @@ deploymentSpec:
         - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
           \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
           \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'lightgbm'\
-          \ 'pycaret' 'pyyaml' 'skops'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'scikit-learn' 'skops'  &&  python3 -m pip install --quiet --no-warn-script-location\
           \ 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
           3.9\"' && \"$0\" \"$@\"\n"
         - sh
@@ -140,67 +150,62 @@ deploymentSpec:
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef automl_search(\n    features_path: dsl.InputPath(\"Dataset\"\
           ),\n    model_path: dsl.OutputPath(\"Model\"),\n    automl_results_path:\
-          \ dsl.OutputPath(\"JSON\"),\n) -> None:\n    \"\"\"\n    Run PyCaret AutoML\
-          \ over the supported model families.\n\n    Args:\n        features_path:\
-          \ Path to the validated features CSV.\n        model_path: KFP output path\
-          \ for the best skops model.\n        automl_results_path: KFP output path\
-          \ for the automl results JSON\n            (best model name, all model metrics,\
-          \ feature columns).\n    \"\"\"\n    import json\n    from pathlib import\
-          \ Path\n\n    import pandas as pd\n    import skops.io as sio\n    import\
-          \ yaml\n\n    try:\n        from pycaret.classification import compare_models,\
-          \ finalize_model, pull, setup\n    except ImportError as exc:\n        raise\
-          \ RuntimeError(\n            \"PyCaret is required for the retraining AutoML\
-          \ search. \"\n            \"Install project requirements before running\
-          \ the pipeline.\"\n        ) from exc\n\n    # Derive project root from\
-          \ model_path parent if available, else cwd\n    # model_path is at {pipeline_root}/{run_name}/automl_search/model\n\
-          \    # In Docker, Path.cwd() may be / so we try to find config relative\
-          \ to\n    # the output artifact location, or fall back to cwd.\n    model_dir\
-          \ = Path(model_path).parent\n    project_root = model_dir.parent.parent.parent\
-          \ if model_dir.exists() else Path.cwd()\n\n    # Try to load feature columns\
-          \ from config\n    config_path = project_root / \"ml\" / \"config.yaml\"\
-          \n    feature_columns = []\n    if config_path.exists():\n        with open(config_path,\
-          \ \"r\") as f:\n            config = yaml.safe_load(f) or {}\n        feature_columns\
-          \ = config.get(\"feature_columns\", [])\n\n    print(f\"Loading features\
-          \ from {features_path}\")\n    df = pd.read_csv(features_path)\n    print(f\"\
-          Loaded {len(df)} rows\")\n\n    if not feature_columns:\n        exclude\
-          \ = {\"risky\", \"hash\", \"author\", \"date\", \"commit_msg\"}\n      \
-          \  feature_columns = [\n            col\n            for col in df.columns\n\
-          \            if col not in exclude\n            and df[col].dtype in [\"\
-          int64\", \"float64\", \"int32\", \"float32\"]\n        ]\n\n    training_df\
-          \ = df[feature_columns + [\"risky\"]].copy()\n    print(f\"Features: {feature_columns}\"\
-          )\n\n    setup(\n        data=training_df,\n        target=\"risky\",\n\
-          \        train_size=0.8,\n        session_id=42,\n        fold=3,\n    \
-          \    html=False,\n        verbose=True,\n        system_log=False,\n   \
-          \     n_jobs=-1,\n    )\n\n    candidate_model_ids = [\"lightgbm\", \"rf\"\
-          , \"lr\"]\n    print(f\"Running PyCaret compare_models(include={candidate_model_ids},\
-          \ sort='F1')\")\n    best_model = compare_models(\n        include=candidate_model_ids,\n\
-          \        sort=\"F1\",\n        n_select=1,\n        fold=3,\n    )\n   \
-          \ leaderboard = pull()\n    print(\"\\nPyCaret leaderboard:\")\n    print(leaderboard.to_string())\n\
-          \n    final_model = finalize_model(best_model)\n    serving_model = final_model\n\
-          \    if hasattr(final_model, \"steps\") and final_model.steps:\n       \
-          \ serving_model = final_model.steps[-1][1]\n        print(\n           \
-          \ \"Extracted fitted estimator from PyCaret pipeline for serving: \"\n \
-          \           f\"{type(serving_model).__name__}\"\n        )\n\n    best_model_name\
-          \ = str(leaderboard.iloc[0].get(\"Model\", type(serving_model).__name__))\n\
-          \    print(f\"Best model: {best_model_name} ({type(serving_model).__name__})\"\
-          )\n\n    metric_columns = {\n        \"accuracy\": \"Accuracy\",\n     \
-          \   \"auc\": \"AUC\",\n        \"recall\": \"Recall\",\n        \"precision\"\
-          : \"Prec.\",\n        \"f1\": \"F1\",\n        \"kappa\": \"Kappa\",\n \
-          \       \"mcc\": \"MCC\",\n    }\n    results = {}\n    for _, row in leaderboard.iterrows():\n\
-          \        model_name = str(row.get(\"Model\", \"unknown\"))\n        results[model_name]\
-          \ = {\n            output_name: float(row[column])\n            for output_name,\
-          \ column in metric_columns.items()\n            if column in leaderboard.columns\
-          \ and pd.notna(row[column])\n        }\n\n    output_model_path = Path(model_path)\n\
-          \    output_model_path.parent.mkdir(parents=True, exist_ok=True)\n    sio.dump(serving_model,\
+          \ dsl.OutputPath(\"JSON\"),\n) -> None:\n    \"\"\"\n    Compare LightGBM,\
+          \ RandomForest, LogisticRegression and pick the best by F1.\n\n    Args:\n\
+          \        features_path: Path to the validated features CSV.\n        model_path:\
+          \ KFP output path for the best skops model.\n        automl_results_path:\
+          \ KFP output path for the automl results JSON.\n    \"\"\"\n    import json\n\
+          \    from pathlib import Path\n\n    import pandas as pd\n    import skops.io\
+          \ as sio\n    from sklearn.ensemble import RandomForestClassifier\n    from\
+          \ sklearn.linear_model import LogisticRegression\n    from sklearn.metrics\
+          \ import accuracy_score, f1_score, precision_score, recall_score\n    from\
+          \ sklearn.model_selection import train_test_split\n\n    try:\n        from\
+          \ lightgbm import LGBMClassifier\n    except ImportError:\n        LGBMClassifier\
+          \ = None\n\n    try:\n        import yaml\n        config_path = Path.cwd().parent.parent.parent\
+          \ / \"ml\" / \"config.yaml\"\n        feature_columns = []\n        if config_path.exists():\n\
+          \            with open(config_path, \"r\") as f:\n                config\
+          \ = yaml.safe_load(f) or {}\n            feature_columns = config.get(\"\
+          feature_columns\", [])\n    except (OSError, ValueError, KeyError):\n  \
+          \      feature_columns = []\n\n    print(f\"Loading features from {features_path}\"\
+          )\n    df = pd.read_csv(features_path)\n    print(f\"Loaded {len(df)} rows\"\
+          )\n\n    if not feature_columns:\n        exclude = {\"risky\", \"hash\"\
+          , \"author\", \"date\", \"commit_msg\"}\n        feature_columns = [\n \
+          \           col\n            for col in df.columns\n            if col not\
+          \ in exclude\n            and df[col].dtype in [\"int64\", \"float64\",\
+          \ \"int32\", \"float32\"]\n        ]\n\n    X = df[feature_columns].values\n\
+          \    y = df[\"risky\"].values\n    print(f\"Features: {feature_columns}\"\
+          )\n\n    X_train, X_test, y_train, y_test = train_test_split(\n        X,\
+          \ y, test_size=0.2, random_state=42, stratify=y\n    )\n    print(f\"Train:\
+          \ {len(X_train)}, Test: {len(X_test)}\")\n\n    candidates = {}\n    if\
+          \ LGBMClassifier is not None:\n        candidates[\"lightgbm\"] = LGBMClassifier(\n\
+          \            num_leaves=31, learning_rate=0.05, n_estimators=100,\n    \
+          \        random_state=42, verbose=-1\n        )\n    candidates[\"random_forest\"\
+          ] = RandomForestClassifier(\n        n_estimators=100, random_state=42\n\
+          \    )\n    candidates[\"logistic_regression\"] = LogisticRegression(\n\
+          \        max_iter=1000, random_state=42\n    )\n\n    results = {}\n   \
+          \ best_model = None\n    best_f1 = -1.0\n    best_name = \"\"\n\n    for\
+          \ name, model in candidates.items():\n        print(f\"\\nTraining {name}...\"\
+          )\n        model.fit(X_train, y_train)\n        y_pred = model.predict(X_test)\n\
+          \        f1 = f1_score(y_test, y_pred)\n        acc = accuracy_score(y_test,\
+          \ y_pred)\n        prec = precision_score(y_test, y_pred, zero_division=0)\n\
+          \        rec = recall_score(y_test, y_pred, zero_division=0)\n        print(f\"\
+          \  F1={f1:.4f}  Acc={acc:.4f}  Prec={prec:.4f}  Rec={rec:.4f}\")\n     \
+          \   results[name] = {\n            \"f1\": float(f1),\n            \"accuracy\"\
+          : float(acc),\n            \"precision\": float(prec),\n            \"recall\"\
+          : float(rec),\n        }\n        if f1 > best_f1:\n            best_f1\
+          \ = f1\n            best_model = model\n            best_name = name\n\n\
+          \    print(f\"\\nBest model: {best_name} (F1={best_f1:.4f})\")\n\n    #\
+          \ Save best model as skops\n    output_model_path = Path(model_path)\n \
+          \   output_model_path.parent.mkdir(parents=True, exist_ok=True)\n    sio.dump(best_model,\
           \ output_model_path)\n    print(f\"Best model saved to {output_model_path}\"\
-          )\n\n    # Write automl results as KFP artifact (not to Path.cwd())\n  \
-          \  automl_output = {\n        \"best_model\": best_model_name,\n       \
-          \ \"results\": results,\n        \"feature_columns\": feature_columns,\n\
-          \    }\n    output_results_path = Path(automl_results_path)\n    output_results_path.parent.mkdir(parents=True,\
+          )\n\n    # Save automl results as KFP artifact\n    automl_output = {\n\
+          \        \"best_model\": best_name,\n        \"results\": results,\n   \
+          \     \"feature_columns\": feature_columns,\n    }\n    output_results_path\
+          \ = Path(automl_results_path)\n    output_results_path.parent.mkdir(parents=True,\
           \ exist_ok=True)\n    with open(output_results_path, \"w\") as f:\n    \
           \    json.dump(automl_output, f, indent=2)\n    print(f\"Results saved to\
           \ {output_results_path}\")\n\n"
-        image: python:3.11
+        image: gatekeeper-kfp-base
     exec-feature-eng:
       container:
         args:
@@ -240,7 +245,7 @@ deploymentSpec:
           \ exist_ok=True)\n    df.to_csv(output_path, index=False)\n\n    print(f\"\
           Feature engineering complete. {len(df.columns)} features retained.\")\n\
           \    print(f\"Engineered features saved to {output_path}\")\n\n"
-        image: python:3.11
+        image: gatekeeper-kfp-base
     exec-ingest:
       container:
         args:
@@ -269,15 +274,31 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef ingest(\n    repo_url: str,\n    since_date: str,\n    features_path:\
-          \ dsl.OutputPath(\"Dataset\"),\n    label_window_days: int = 7,\n) -> None:\n\
-          \    \"\"\"\n    Clone/pull the target repo and extract commit features.\n\
-          \n    Args:\n        repo_url: Git repository URL or local repository path.\n\
-          \        since_date: Date string (YYYY-MM-DD) to start mining from.\n  \
-          \      features_path: KFP output path for the feature CSV.\n        label_window_days:\
-          \ Days after commit to check for re-touches.\n    \"\"\"\n    import os\n\
-          \    import subprocess\n    import tempfile\n    from collections import\
-          \ defaultdict\n    from datetime import datetime, timezone\n    from pathlib\
-          \ import Path\n\n    import pandas as pd\n    from pydriller import Repository\n\
+          \ dsl.OutputPath(\"Dataset\"),\n    label_window_days: int = 7,\n    cached_csv_path:\
+          \ str = \"\",\n) -> None:\n    \"\"\"\n    Clone/pull the target repo and\
+          \ extract commit features.\n\n    Args:\n        repo_url: Git repository\
+          \ URL or local repository path.\n        since_date: Date string (YYYY-MM-DD)\
+          \ to start mining from.\n        features_path: KFP output path for the\
+          \ feature CSV.\n        label_window_days: Days after commit to check for\
+          \ re-touches.\n        cached_csv_path: If non-empty and file exists, copy\
+          \ this CSV\n            to features_path instead of re-mining (saves ~9\
+          \ min on\n            large repos).\n    \"\"\"\n    import os\n    import\
+          \ shutil\n    import subprocess\n    import tempfile\n    from collections\
+          \ import defaultdict\n    from datetime import datetime, timezone\n    from\
+          \ pathlib import Path\n\n    import pandas as pd\n\n    # --- Cache check:\
+          \ skip expensive PyDriller mining if CSV exists ---\n    if cached_csv_path:\n\
+          \        cached = Path(cached_csv_path)\n        if cached.exists() and\
+          \ cached.stat().st_size > 0:\n            df = pd.read_csv(cached)\n   \
+          \         print(f\"Using cached features from {cached} ({len(df)} rows)\"\
+          )\n            if \"risky\" in df.columns:\n                total = len(df)\n\
+          \                positive = int(df[\"risky\"].sum())\n                print(\n\
+          \                    f\"Class Balance: {positive} risky ({positive / total:.2%}),\
+          \ \"\n                    f\"{total - positive} safe ({(total - positive)\
+          \ / total:.2%})\"\n                )\n            output_path = Path(features_path)\n\
+          \            output_path.parent.mkdir(parents=True, exist_ok=True)\n   \
+          \         df.to_csv(output_path, index=False)\n            print(f\"Cached\
+          \ features copied to {output_path}\")\n            return\n\n    # --- Full\
+          \ mining path (no cache available) ---\n    from pydriller import Repository\n\
           \n    class CommitFeatureExtractor:\n        def __init__(self, repo_path,\
           \ since, label_window_days=7):\n            self.repo_path = repo_path\n\
           \            self.since = since\n            self.label_window_days = label_window_days\n\
@@ -350,7 +371,7 @@ deploymentSpec:
           \ \"\n        f\"{total - positive} safe ({(total - positive) / total:.2%})\"\
           \n    )\n    print(f\"Ingest complete. Features saved to {output_path}\"\
           )\n\n"
-        image: python:3.11
+        image: gatekeeper-kfp-base
     exec-register-model:
       container:
         args:
@@ -455,7 +476,7 @@ deploymentSpec:
           \ Previous F1={current_f1:.4f}\"\n    )\n    if promoted_version is not\
           \ None:\n        status += f\", Production version={promoted_version.version}\"\
           \n    print(status)\n    return status\n\n"
-        image: python:3.11
+        image: gatekeeper-kfp-base
     exec-validate:
       container:
         args:
@@ -522,7 +543,7 @@ deploymentSpec:
           \ exist_ok=True)\n    df.to_csv(output_path, index=False)\n\n    print(\"\
           All validations passed!\")\n    print(f\"Validated features saved to {output_path}\"\
           )\n\n"
-        image: python:3.11
+        image: gatekeeper-kfp-base
 pipelineInfo:
   description: Retrain the Gatekeeper risk prediction model
   name: gatekeeper-retrain-pipeline
@@ -566,6 +587,8 @@ root:
           name: comp-ingest
         inputs:
           parameters:
+            cached_csv_path:
+              componentInputParameter: cached_csv_path
             label_window_days:
               componentInputParameter: label_window_days
             repo_url:
@@ -615,6 +638,11 @@ root:
           name: validate
   inputDefinitions:
     parameters:
+      cached_csv_path:
+        defaultValue: ''
+        description: If set, ingest reuses this CSV instead of mining
+        isOptional: true
+        parameterType: STRING
       label_window_days:
         defaultValue: 7.0
         description: Window for risky commit labeling
@@ -636,7 +664,7 @@ root:
         isOptional: true
         parameterType: STRING
       since_date:
-        defaultValue: '2023-08-14'
+        defaultValue: '2023-08-15'
         description: Date to start mining commits from
         isOptional: true
         parameterType: STRING

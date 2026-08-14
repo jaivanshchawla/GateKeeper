@@ -7,6 +7,7 @@ from kfp import dsl
 
 
 @dsl.component(
+    base_image="gatekeeper-kfp-base",
     packages_to_install=["pydriller", "pandas", "pyyaml"],
 )
 def ingest(
@@ -14,6 +15,7 @@ def ingest(
     since_date: str,
     features_path: dsl.OutputPath("Dataset"),
     label_window_days: int = 7,
+    cached_csv_path: str = "",
 ) -> None:
     """
     Clone/pull the target repo and extract commit features.
@@ -23,6 +25,9 @@ def ingest(
         since_date: Date string (YYYY-MM-DD) to start mining from.
         features_path: KFP output path for the feature CSV.
         label_window_days: Days after commit to check for re-touches.
+        cached_csv_path: If non-empty and file exists, copy this CSV
+            to features_path instead of re-mining (saves ~9 min on
+            large repos).
     """
     import os
     import subprocess
@@ -32,6 +37,27 @@ def ingest(
     from pathlib import Path
 
     import pandas as pd
+
+    # --- Cache check: skip expensive PyDriller mining if CSV exists ---
+    if cached_csv_path:
+        cached = Path(cached_csv_path)
+        if cached.exists() and cached.stat().st_size > 0:
+            df = pd.read_csv(cached)
+            print(f"Using cached features from {cached} ({len(df)} rows)")
+            if "risky" in df.columns:
+                total = len(df)
+                positive = int(df["risky"].sum())
+                print(
+                    f"Class Balance: {positive} risky ({positive / total:.2%}), "
+                    f"{total - positive} safe ({(total - positive) / total:.2%})"
+                )
+            output_path = Path(features_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_path, index=False)
+            print(f"Cached features copied to {output_path}")
+            return
+
+    # --- Full mining path (no cache available) ---
     from pydriller import Repository
 
     class CommitFeatureExtractor:
