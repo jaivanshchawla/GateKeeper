@@ -87,6 +87,24 @@ def evaluate_model(
     return metrics
 
 
+def _backup_mlflow_db() -> None:
+    """Back up the MLflow tracking database before writing to it.
+
+    SAFETY: Prevents accidental data loss. Never delete mlflow.db directly.
+    """
+    import shutil
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    db_path = Path("mlflow.db")
+    if not db_path.exists():
+        return
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup = db_path.parent / f"mlflow.db.backup-{ts}"
+    shutil.copy2(db_path, backup)
+    print(f"Backed up mlflow.db -> {backup.name}")
+
+
 def log_to_mlflow(
     model: lgb.LGBMClassifier,
     params: dict,
@@ -94,6 +112,9 @@ def log_to_mlflow(
     X_train: pd.DataFrame
 ) -> None:
     """Log experiment to MLflow."""
+    # SAFETY: Back up the tracking DB before writing
+    _backup_mlflow_db()
+
     # Set MLflow tracking URI to local SQLite database
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
     

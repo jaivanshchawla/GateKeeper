@@ -77,6 +77,34 @@ def _default_since_date() -> str:
     return (datetime.now(timezone.utc) - timedelta(days=3 * 365)).strftime("%Y-%m-%d")
 
 
+def _backup_mlflow_db() -> None:
+    """Back up the MLflow tracking database before running the pipeline.
+
+    SAFETY: This prevents accidental data loss if someone runs
+    'rm -f mlflow.db' or the pipeline overwrites the DB.
+    The backup is mlflow.db.backup-<YYYYMMDD-HHMMSS>.
+    Never delete or overwrite the tracking database directly.
+    """
+    import shutil
+
+    db_path = PROJECT_ROOT / "mlflow.db"
+    if not db_path.exists():
+        print("No mlflow.db found — nothing to back up.")
+        return
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_path = PROJECT_ROOT / f"mlflow.db.backup-{ts}"
+    shutil.copy2(db_path, backup_path)
+    print(f"Backed up mlflow.db -> {backup_path.name} ({backup_path.stat().st_size:,} bytes)")
+
+    # Clean up old backups: keep only the 5 most recent
+    backups = sorted(PROJECT_ROOT.glob("mlflow.db.backup-*"), key=lambda p: p.stat().st_mtime)
+    while len(backups) > 5:
+        oldest = backups.pop(0)
+        oldest.unlink()
+        print(f"  Removed old backup: {oldest.name}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the Gatekeeper retraining DAG using kfp.local."
@@ -87,6 +115,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-rows", type=int, default=100)
     parser.add_argument("--min-positive-pct", type=float, default=0.05)
     parser.add_argument("--pipeline-root", default=str(PROJECT_ROOT / "local_outputs" / "retrain"))
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset MLflow tracking DB before running (creates backup first, then deletes).",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +187,20 @@ def main() -> None:
     print("=" * 60)
     print(f"Project root: {PROJECT_ROOT}")
     print(f"Pipeline root: {pipeline_root}")
+
+    # SAFETY: Always back up mlflow.db before running the pipeline.
+    # This is the #1 guard against accidental data loss.
+    # Never delete mlflow.db without an explicit --reset flag.
+    _backup_mlflow_db()
+
+    if args.reset:
+        db_path = PROJECT_ROOT / "mlflow.db"
+        if db_path.exists():
+            db_path.unlink()
+            print("--reset: Deleted mlflow.db (backup preserved above).")
+        else:
+            print("--reset: No mlflow.db to reset.")
+
     print()
 
     # Step 1: Initialize KFP (calls tempfile.mkdtemp — must NOT be patched yet)
