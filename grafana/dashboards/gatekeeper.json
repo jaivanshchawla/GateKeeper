@@ -60,8 +60,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "rate(http_requests_total{code=~\"4..|5..\"}[1m])",
-          "legendFormat": "{{method}} {{handler}} {{code}}",
+          "expr": "rate(http_requests_total{status=~\"4xx|5xx\"}[1m])",
+          "legendFormat": "{{method}} {{handler}} {{status}}",
           "refId": "A"
         }
       ],
@@ -79,8 +79,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "sum(http_requests_total) by (code)",
-          "legendFormat": "{{code}}",
+          "expr": "sum(http_requests_total) by (status)",
+          "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
