@@ -14,8 +14,9 @@ COPY api/ ./api/
 COPY ml/ ./ml/
 COPY models/ ./models/
 
-# Expose port
+# Entrypoint reads $PORT from Render (default 10000) or falls back to 8000 locally
+RUN chmod +x /app/api/entrypoint.sh
+
 EXPOSE 8000
 
-# Run the application (uvicorn.main:app so it resolves api/main.py)
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/api/entrypoint.sh"]
