@@ -14,8 +14,12 @@ import numpy as np
 import skops.io as sio
 import yaml
 from fastapi import FastAPI, HTTPException
-from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+except ImportError:
+    Instrumentator = None
 
 # Load configuration
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "config.yaml")
@@ -159,7 +163,8 @@ app = FastAPI(
 )
 
 # Prometheus metrics — exposed at /metrics
-Instrumentator().instrument(app).expose(app)
+if Instrumentator is not None:
+    Instrumentator().instrument(app).expose(app)
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
