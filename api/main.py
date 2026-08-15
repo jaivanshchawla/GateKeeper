@@ -14,6 +14,7 @@ import numpy as np
 import skops.io as sio
 import yaml
 from fastapi import FastAPI, HTTPException
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 # Load configuration
@@ -156,6 +157,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Prometheus metrics — exposed at /metrics
+Instrumentator().instrument(app).expose(app)
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():

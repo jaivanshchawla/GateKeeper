@@ -2,7 +2,6 @@ pydriller
 pandas
 scikit-learn
 lightgbm
-pycaret
 mlflow
 skops
 dvc
@@ -21,3 +20,9 @@ requests
 sqlalchemy
 psycopg2-binary
 kfp
+feast
+tensorflow
+keras
+prometheus-fastapi-instrumentator
+fairlearn
+joblib

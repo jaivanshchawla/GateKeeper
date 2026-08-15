@@ -1,0 +1,18 @@
+{
+  "groups": {
+    "new": {
+      "count": 184,
+      "actual_positive_rate": 0.41847826086956524,
+      "predicted_positive_rate": 0.3695652173913043,
+      "accuracy": 0.7336956521739131
+    },
+    "experienced": {
+      "count": 407,
+      "actual_positive_rate": 0.47174447174447176,
+      "predicted_positive_rate": 0.4226044226044226,
+      "accuracy": 0.7002457002457002
+    }
+  },
+  "demographic_parity_difference": 0.05303920521311828,
+  "threshold": 0.1
+}
