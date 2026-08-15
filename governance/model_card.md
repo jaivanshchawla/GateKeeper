@@ -78,6 +78,23 @@ A Fairlearn-based check was run on the test set to evaluate whether the model is
 | v4 | 2026-08-13 | RandomForest | 0.6814 | AutoML comparison, promoted to Production |
 | v2 (current) | 2026-08-14 | RandomForest | 0.6640 | Re-registered after mlflow.db incident, same architecture |
 
+## Cloud Deployment
+
+The API is deployed as a standalone Docker container, making it portable across cloud providers with **zero code changes** — only the deployment target configuration differs.
+
+| Provider | Service | Free Tier | Notes |
+|----------|---------|-----------|-------|
+| **Render** | Web Service | ✅ Yes (no card) | Current target. Blueprint via `render.yaml`. |
+| AWS | ECS Fargate / App Runner | 12-month free tier | Requires AWS account + billing setup |
+| Azure | Container Apps | Free tier available | Requires Azure account |
+| GCP | Cloud Run | 2M requests/month free | Requires GCP account |
+
+**Why Render:** Chosen specifically for zero-card free hosting suitable for a student project. The Docker-based deployment is identical across all targets — `render.yaml` is the only provider-specific file.
+
+**Model loading in production:** The deployed API does not have a local MLflow database. On startup, it falls back to loading `models/gatekeeper_risk_model.skops` directly (Strategy 3 in `api/main.py`). This standalone file is committed to git and baked into the Docker image (~5MB).
+
+See [DEPLOY.md](../DEPLOY.md) for step-by-step deployment instructions.
+
 ## Maintenance
 
 - **Retraining:** Run `python pipelines/run_retrain.py` weekly via GitHub Actions

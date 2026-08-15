@@ -1,0 +1,35 @@
+name: Keep Warm
+
+on:
+  schedule:
+    # Every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if secret is set
+        id: check
+        run: |
+          if [ -z "${{ secrets.DEPLOYED_API_URL }}" ]; then
+            echo "DEPLOYED_API_URL secret is not set — skipping ping"
+            echo "To activate: add the Render deployment URL as a GitHub repo secret"
+            echo "named DEPLOYED_API_URL (Settings > Secrets and variables > Actions)"
+            exit 0
+          fi
+          echo "url_set=true" >> "$GITHUB_OUTPUT"
+
+      - name: Ping health endpoint
+        if: steps.check.outputs.url_set == 'true'
+        run: |
+          URL="${{ secrets.DEPLOYED_API_URL }}/health"
+          echo "Pinging $URL"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$URL")
+          echo "Response: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Health check returned $HTTP_CODE (expected 200)"
+            exit 1
+          fi
+          echo "Health check passed"

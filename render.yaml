@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: gatekeeper-api
+    runtime: image
+    image:
+      url: # Render will build from the Dockerfile in the repo
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MLFLOW_TRACKING_URI
+        value: sqlite:///nonexistent/mlflow.db
+        # Forces Strategy 3 (standalone skops file) — no local MLflow DB needed
+    dockerfilePath: api/Dockerfile
+    port: 8000
