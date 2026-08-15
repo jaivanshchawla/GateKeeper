@@ -57,10 +57,16 @@ def load_config(config_path: str = "ml/config.yaml"):
 
 
 def get_risk_label(score: float) -> str:
-    """Determine risk label based on score thresholds."""
+    """Determine risk label based on score thresholds.
+    
+    Thresholds: <0.3 low, 0.3-0.6 medium (inclusive), >0.6 high.
+    Note: <= 0.6 for medium means exactly 0.60 is medium (upper edge).
+    These thresholds were originally set for LightGBM; see model_card.md
+    limitation #8 for the recalibration gap.
+    """
     if score < 0.3:
         return "low"
-    elif score < 0.6:
+    elif score <= 0.6:
         return "medium"
     else:
         return "high"

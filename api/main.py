@@ -198,9 +198,13 @@ async def predict(request: PredictionRequest):
         risk_score = float(model.predict_proba(features_array)[0][1])
         
         # Determine risk label based on thresholds
+        # Note: <= 0.6 for medium means exactly 0.60 is medium (upper edge),
+        # not high. This matches the stated definition: <0.3 low, 0.3-0.6
+        # medium, >0.6 high. Thresholds were originally set for LightGBM
+        # and not recalibrated after Phase 7 promoted RandomForest.
         if risk_score < 0.3:
             risk_label = "low"
-        elif risk_score < 0.6:
+        elif risk_score <= 0.6:
             risk_label = "medium"
         else:
             risk_label = "high"

@@ -66,6 +66,10 @@ A Fairlearn-based check was run on the test set to evaluate whether the model is
 
 6. **Binary risk framing:** The model outputs a continuous probability but the gate logic uses hard thresholds (<0.3 low, 0.3-0.6 medium, >0.6 high). Commits near these boundaries are inherently uncertain.
 
+7. **Train/test overfitting:** RandomForest (max_depth=None) shows more extreme scores on training data (51.7% labeled "low") than test data (27.4% labeled "low") — classic unpruned-tree overfitting. The 100 unpruned decision trees memorize training patterns, producing confident extreme scores on seen data, but revert to more moderate predictions on unseen data. Real-world confidence is likely closer to test-set behavior. **Documented future improvement:** set max_depth=10 or increase min_samples_leaf to reduce overfitting without retraining.
+
+8. **Threshold-recalibration gap:** The risk thresholds (0.3/0.6) were set for LightGBM and never recalibrated when Phase 7 promoted a RandomForest instead. Currently still produces a reasonable 27/40/32 score distribution split, but nothing guarantees this holds for future model swaps — the pipeline selects by F1 but doesn't validate or recalibrate downstream thresholds. **Documented MLOps gap:** register_model.py could compute new threshold boundaries from the new model's score percentiles on each promotion, rather than using fixed global values. This is a natural next-iteration improvement.
+
 ## Version History
 
 | Version | Date | Model Type | F1 | Notes |
