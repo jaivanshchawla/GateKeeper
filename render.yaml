@@ -2,6 +2,7 @@ services:
   - type: web
     name: gatekeeper-api
     runtime: docker
+    dockerfilePath: api/Dockerfile
     plan: free
     healthCheckPath: /health
     envVars:
