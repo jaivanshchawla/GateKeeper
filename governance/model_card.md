@@ -12,13 +12,25 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 
 | Property | Value |
 |----------|-------|
-| Source | django/django GitHub repository |
+| Source | 5 repositories across 5 languages: django/django (Python), facebook/react (JavaScript), rust-lang/rust (Rust), kubernetes/kubernetes (Go), apache/kafka (Java) |
 | Mining tool | PyDriller |
-| Date range | 2023-08-09 to 2026-08-13 (~3 years) |
-| Total commits | 2,953 |
+| Date range | 2024-08-18 to 2026-08-18 (~2 years) |
+| Total commits | 5,896 |
 | Features | 9 (lines_added, lines_deleted, files_touched, dirs_touched, author_prior_commits, hour_of_day, day_of_week, commit_msg_length, is_fix_bug_revert) |
 | Label definition | 1 (risky) if: commit message contains "revert", OR any of its files were touched again by another commit within 7 days |
-| Class balance | 45.48% risky (1,343), 54.52% safe (1,610) |
+| Class balance | 51.4% risky (3,033), 48.6% safe (2,863) |
+
+### Per-Repo Breakdown
+
+| Repo | Language | Commits | Risky % |
+|------|----------|---------|--------|
+| django/django | Python | 2,038 | 45.2% |
+| facebook/react | JavaScript | 2,358 | 66.0% |
+| rust-lang/rust | Rust | 500 | 25.2% |
+| kubernetes/kubernetes | Go | 500 | 26.8% |
+| apache/kafka | Java | 500 | 59.2% |
+
+Note: Rust, Kubernetes, and Kafka were capped at 500 commits each due to the O(n²) labeling cost on large monorepos. Django and React used larger samples (2,000+).
 
 ## Model Architecture
 
@@ -35,10 +47,24 @@ Evaluated on 20% held-out test set (stratified, random_state=42):
 
 | Metric | Value |
 |--------|-------|
-| Accuracy | 0.7107 |
-| Precision | 0.7042 |
-| Recall | 0.6283 |
-| F1 | 0.6640 |
+| Accuracy | 0.6822 |
+| Precision | 0.6859 |
+| Recall | 0.7051 |
+| F1 | 0.6954 |
+
+### Leave-One-Repo-Out Generalization
+
+To test whether the model generalizes beyond its training repos, we trained on 4 repos and tested on the held-out 5th:
+
+| Held-out Repo | Accuracy | Precision | Recall | F1 |
+|---------------|----------|-----------|--------|----|
+| django | 0.621 | 0.568 | 0.678 | 0.618 |
+| react | 0.607 | 0.734 | 0.634 | 0.681 |
+| rust | 0.722 | 0.446 | 0.429 | 0.437 |
+| kubernetes | 0.748 | 0.547 | 0.351 | 0.427 |
+| kafka | 0.706 | 0.788 | 0.689 | 0.735 |
+
+**Interpretation:** The model generalizes well to repositories with similar development patterns (django, react, kafka all >0.6 F1). Performance drops for Rust and Kubernetes — repositories with fundamentally different commit conventions (Rust's bors merge commits, Kubernetes' bot-heavy workflow). The per-author-history feature likely contributes to this gap: the model learned Django/React contributor patterns that don't transfer to Rust's contributor model.
 
 ### Benchmark: Neural Network Comparison
 
@@ -72,11 +98,10 @@ A Fairlearn-based check was run on the test set to evaluate whether the model is
 
 ## Version History
 
-| Version | Date | Model Type | F1 | Notes |
-|---------|------|------------|-----|-------|
-| v1-v3 | 2026-08-09 | LightGBM | 0.6588 | Initial training |
-| v4 | 2026-08-13 | RandomForest | 0.6814 | AutoML comparison, promoted to Production |
-| v2 (current) | 2026-08-14 | RandomForest | 0.6640 | Re-registered after mlflow.db incident, same architecture |
+| Version | Date | Model Type | F1 | Training Data | Notes |
+|---------|------|------------|-----|---------------|-------|
+| v1-v3 | 2026-08-09 | LightGBM | 0.6588 | Django only | Initial training |
+| v4 (current) | 2026-08-18 | LGBMClassifier | 0.6954 | 5 repos (5,896 commits) | Multi-repo retraining, promoted to Production |
 
 ## Cloud Deployment
 

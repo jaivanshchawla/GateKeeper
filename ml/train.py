@@ -115,8 +115,8 @@ def log_to_mlflow(
     # SAFETY: Back up the tracking DB before writing
     _backup_mlflow_db()
 
-    # Set MLflow tracking URI to local SQLite database
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    # Set MLflow tracking URI to local SQLite database (use absolute path to avoid URL-encoding issues on Windows)
+    mlflow.set_tracking_uri(f"sqlite:///{os.path.abspath('mlflow.db')}")
     
     # Set experiment name
     mlflow.set_experiment("gatekeeper")

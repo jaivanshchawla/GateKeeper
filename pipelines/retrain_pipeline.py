@@ -26,13 +26,13 @@ project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from kfp import dsl  # noqa: E402
+from kfp import dsl
 
-from pipelines.components.automl_search import automl_search  # noqa: E402
-from pipelines.components.feature_eng import feature_eng  # noqa: E402
-from pipelines.components.ingest import ingest  # noqa: E402
-from pipelines.components.register_model import register_model  # noqa: E402
-from pipelines.components.validate import validate  # noqa: E402
+from pipelines.components.automl_search import automl_search
+from pipelines.components.feature_eng import feature_eng
+from pipelines.components.ingest import ingest
+from pipelines.components.register_model import register_model
+from pipelines.components.validate import validate
 
 
 @dsl.pipeline(
@@ -42,30 +42,33 @@ from pipelines.components.validate import validate  # noqa: E402
 def retrain_pipeline(
     repo_url: str = "https://github.com/django/django.git",
     since_date: str = (
-        datetime.now(timezone.utc) - timedelta(days=3 * 365)
+        datetime.now(timezone.utc) - timedelta(days=2 * 365)
     ).strftime("%Y-%m-%d"),
     label_window_days: int = 7,
     min_rows: int = 100,
     min_positive_pct: float = 0.05,
     cached_csv_path: str = "",
+    repo_urls: str = "",
 ):
     """
     End-to-end retraining pipeline for KFP deployment.
 
     Args:
-        repo_url: Git repository URL to mine
+        repo_url: Single git repository URL to mine (fallback)
         since_date: Date to start mining commits from
         label_window_days: Window for risky commit labeling
         min_rows: Minimum row count for validation
         min_positive_pct: Minimum positive class fraction
         cached_csv_path: If set, ingest reuses this CSV instead of mining
+        repo_urls: Comma-separated list of repo URLs for multi-repo mining
     """
-    # Step 1: Ingest — clone repo and extract features
+    # Step 1: Ingest — clone repos and extract features
     ingest_task = ingest(
         repo_url=repo_url,
         since_date=since_date,
         label_window_days=label_window_days,
         cached_csv_path=cached_csv_path,
+        repo_urls=repo_urls,
     )
 
     # Step 2: Feature engineering (light pass-through)

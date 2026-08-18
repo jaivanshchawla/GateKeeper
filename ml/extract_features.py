@@ -18,7 +18,7 @@ from pydriller import Repository
 class CommitFeatureExtractor:
     """Extracts features from git commit history and labels risky commits."""
 
-    def __init__(self, repo_path: str, since: str, label_window_days: int = 7):
+    def __init__(self, repo_path: str, since: str, label_window_days: int = 7, max_commits: int = 0):
         """
         Initialize the feature extractor.
 
@@ -26,10 +26,12 @@ class CommitFeatureExtractor:
             repo_path: Path to the cloned git repository
             since: Date string (YYYY-MM-DD) to start mining commits from
             label_window_days: Number of days after commit to check for re-risks
+            max_commits: Stop after this many commits (0 = unlimited)
         """
         self.repo_path = repo_path
         self.since = since
         self.label_window_days = label_window_days
+        self.max_commits = max_commits
         self.author_prior_counts = defaultdict(int)
         
         # Store file touches for labeling (file_path -> [(commit_hash, commit_date)])
@@ -105,17 +107,26 @@ class CommitFeatureExtractor:
         }
 
     def _collect_all_commits(self) -> list[dict]:
-        """Collect all commits with features."""
-        print(f"Mining commits from {self.repo_path} since {self.since}...")
+        """Collect all commits with features.
+        
+        Stops when EITHER the since-date boundary OR max_commits cap
+        is hit, whichever comes first.
+        """
+        limit_str = f", max {self.max_commits}" if self.max_commits else ""
+        print(f"Mining commits from {self.repo_path} since {self.since}{limit_str}...")
         
         features = []
         # Convert string date to datetime object for PyDriller
-        since_date = datetime.strptime(self.since, "%Y-%m-%d")
+        since_date = datetime.strptime(self.since, "%Y-%m-%d")  # noqa: DTZ007 — PyDriller requires naive datetime
         repository = Repository(self.repo_path, since=since_date)
         
         for commit in repository.traverse_commits():
             feature_dict = self._extract_features_from_commit(commit)
             features.append(feature_dict)
+            
+            if self.max_commits and len(features) >= self.max_commits:
+                print(f"Reached max-commits cap ({self.max_commits}), stopping.")
+                break
         
         print(f"Collected {len(features)} commits.")
         return features
@@ -124,42 +135,37 @@ class CommitFeatureExtractor:
         """Label commits as risky (1) or safe (0)."""
         print("Labeling commits...")
         
-        # Initialize label column
-        features_df["risky"] = 0
+        # Build hash→row-index lookup once (avoids O(n) DataFrame scan per commit)
+        _hash_to_idx = {h: i for i, h in enumerate(features_df["hash"])}
+        risky_hashes: set[str] = set()
         
-        # Label commits based on two criteria:
-        # 1. If the commit message contains "revert" referencing this commit
-        # 2. If any of its files were touched again within the label window
-        
-        # First, check for revert references
-        revert_pattern = "revert"
+        # Criterion 1: commit message contains "revert"
         for idx, row in features_df.iterrows():
-            commit_msg = row["commit_msg"].lower()
-            
-            # Check if this commit is a revert
-            if revert_pattern in commit_msg:
-                # Mark as risky if it's a revert commit
-                features_df.at[idx, "risky"] = 1
+            if "revert" in row["commit_msg"].lower():
+                risky_hashes.add(row["hash"])
         
-        # Second, check if any files were touched again within the window
-        for file_path, touches in self.file_touches.items():
-            # Sort touches by date
+        # Criterion 2: any file touched again within label_window_days
+        for touches in self.file_touches.values():
+            if not touches:
+                continue
             touches.sort(key=lambda x: x[1])
             
-            # For each touch, check if any subsequent touch is within the window
             for i, (hash_i, date_i) in enumerate(touches):
+                if hash_i in risky_hashes:
+                    continue  # already labeled
                 for j in range(i + 1, len(touches)):
-                    hash_j, date_j = touches[j]
+                    _hash_j, date_j = touches[j]
                     time_diff = (date_j - date_i).days
-                    
                     if time_diff <= self.label_window_days:
-                        # Mark commit i as risky
-                        idx = features_df[features_df["hash"] == hash_i].index
-                        if len(idx) > 0:
-                            features_df.at[idx[0], "risky"] = 1
-                    else:
-                        # No need to check further for this commit
+                        risky_hashes.add(hash_i)
                         break
+                    else:
+                        break
+        
+        # Apply labels in one vectorized pass
+        features_df["risky"] = features_df["hash"].apply(
+            lambda h: 1 if h in risky_hashes else 0
+        )
         
         return features_df
 
@@ -249,6 +255,12 @@ def main():
         help="Output CSV path (default: data/commit_features.csv)"
     )
     parser.add_argument(
+        "--max-commits",
+        type=int,
+        default=0,
+        help="Stop after this many commits (0 = unlimited)"
+    )
+    parser.add_argument(
         "--config",
         default="ml/config.yaml",
         help="Path to config file (default: ml/config.yaml)"
@@ -270,7 +282,8 @@ def main():
     extractor = CommitFeatureExtractor(
         repo_path=args.repo_path,
         since=args.since,
-        label_window_days=label_window_days
+        label_window_days=label_window_days,
+        max_commits=args.max_commits
     )
     
     extractor.extract_and_save(args.output)

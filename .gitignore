@@ -37,3 +37,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Cloned repos (too large for git)
+repos/
+
+# MLflow database backups
+mlflow.db.backup-*

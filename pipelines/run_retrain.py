@@ -62,9 +62,9 @@ if sys.platform == "win32":
 
     _dth.run_docker_container = _fixed_run
 
-from kfp import local  # noqa: E402
+from kfp import local
 
-from pipelines.retrain_pipeline import retrain_pipeline  # noqa: E402
+from pipelines.retrain_pipeline import retrain_pipeline
 
 
 def _default_since_date() -> str:
@@ -110,6 +110,17 @@ def parse_args() -> argparse.Namespace:
         description="Run the Gatekeeper retraining DAG using kfp.local."
     )
     parser.add_argument("--repo-url", default="https://github.com/django/django.git")
+    parser.add_argument(
+        "--repo-urls",
+        default=(
+            "https://github.com/django/django.git,"
+            "https://github.com/facebook/react.git,"
+            "https://github.com/rust-lang/rust.git,"
+            "https://github.com/kubernetes/kubernetes.git,"
+            "https://github.com/apache/kafka.git"
+        ),
+        help="Comma-separated list of repo URLs for multi-repo mining.",
+    )
     parser.add_argument("--since-date", default=_default_since_date())
     parser.add_argument("--label-window-days", type=int, default=7)
     parser.add_argument("--min-rows", type=int, default=100)
@@ -243,6 +254,7 @@ def main() -> None:
         min_rows=args.min_rows,
         min_positive_pct=args.min_positive_pct,
         cached_csv_path=cached_csv_container_path,
+        repo_urls=args.repo_urls,
     )
 
 
