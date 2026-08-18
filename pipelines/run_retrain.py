@@ -62,9 +62,9 @@ if sys.platform == "win32":
 
     _dth.run_docker_container = _fixed_run
 
-from kfp import local
+from kfp import local  # noqa: E402
 
-from pipelines.retrain_pipeline import retrain_pipeline
+from pipelines.retrain_pipeline import retrain_pipeline  # noqa: E402
 
 
 def _default_since_date() -> str:
