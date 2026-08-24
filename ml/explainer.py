@@ -65,7 +65,7 @@ def _logits_to_prob(logits: float) -> float:
     return 1.0 / (1.0 + np.exp(-logits))
 
 
-def _load_model_and_explainer(model_path: str = None):
+def _load_model_and_explainer(model_path: str | None = None):
     """Load the model and initialize SHAP TreeExplainer (cached)."""
     global _explainer, _feature_columns
 
@@ -80,7 +80,8 @@ def _load_model_and_explainer(model_path: str = None):
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model not found: {model_path}")
 
-    model = sio.loads(open(model_path, "rb").read(), trusted=TRUSTED_TYPES)
+    with open(model_path, "rb") as f:
+        model = sio.loads(f.read(), trusted=TRUSTED_TYPES)
 
     # Load feature columns from config
     import yaml
@@ -98,8 +99,8 @@ def _load_model_and_explainer(model_path: str = None):
     return _explainer, _feature_columns
 
 
-def explain(features_array: np.ndarray, feature_columns: list[str] = None,
-            top_k: int = 3, model_path: str = None) -> list[dict]:
+def explain(features_array: np.ndarray, feature_columns: list[str] | None = None,
+            top_k: int = 3, model_path: str | None = None) -> list[dict]:
     """Get SHAP-based explanations for a prediction.
 
     Args:
@@ -155,7 +156,7 @@ def explain(features_array: np.ndarray, feature_columns: list[str] = None,
     return results
 
 
-def format_explanation(factors: list[dict], features: dict = None) -> list[str]:
+def format_explanation(factors: list[dict], features: dict | None = None) -> list[str]:
     """Format SHAP factors as plain-language strings.
 
     Args:
