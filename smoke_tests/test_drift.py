@@ -18,8 +18,8 @@ import pytest
 
 def test_drift_report_generates():
     """Validate that Evidently drift report generates without error."""
-    from evidently.legacy.report import Report
     from evidently.legacy.metric_preset import DataDriftPreset
+    from evidently.legacy.report import Report
 
     # Use the committed reference data sample (not the full DVC-tracked CSV)
     # This sample is stratified to preserve ~45/55 class balance and is

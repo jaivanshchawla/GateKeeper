@@ -7,8 +7,9 @@ class balance, committed directly to git since DVC isn't available in CI.
 """
 
 import os
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
 # Set seed for reproducibility
 np.random.seed(42)

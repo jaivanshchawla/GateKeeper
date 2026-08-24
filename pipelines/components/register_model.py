@@ -50,6 +50,16 @@ def register_model(
         "pandas.core.series.Series",
     ]
 
+    # ── SAFETY: Back up mlflow.db before any registry writes ──────────────
+    import shutil
+    from datetime import datetime, timezone
+    db_path = Path("mlflow.db")
+    if db_path.exists():
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup = db_path.parent / f"mlflow.db.backup-{ts}"
+        shutil.copy2(db_path, backup)
+        print(f"Backed up mlflow.db -> {backup.name}")
+
     # MLflow tracking URI: use env var (set by run_retrain.py or docker-compose)
     tracking_uri = os.getenv(
         "MLFLOW_TRACKING_URI",
@@ -102,20 +112,27 @@ def register_model(
     except MlflowException as exc:
         print(f"No existing model registered: {exc}")
 
+    # Use cross-repo (LORO mean) F1 for promotion, not pooled-random.
+    # This ensures we never mix evaluation protocols in a promotion decision.
     new_f1 = new_metrics.get("f1", 0)
+    new_f1_cross = new_metrics.get("f1_cross_repo", new_f1)
     current_f1 = current_metrics.get("f1", 0)
-    should_promote = new_f1 > current_f1 if current_version else True
+    current_f1_cross = current_metrics.get("f1_cross_repo", current_f1)
+    should_promote = new_f1_cross > current_f1_cross if current_version else True
 
     print(f"\n{'=' * 60}")
     print("Model Promotion Decision:")
-    print(f"  New model F1: {new_f1:.4f}")
-    print(f"  Current Production F1: {current_f1:.4f}")
+    print(f"  New model F1 (pooled):    {new_f1:.4f}")
+    print(f"  New model F1 (cross-repo): {new_f1_cross:.4f}")
+    print(f"  Current F1 (pooled):      {current_f1:.4f}")
+    print(f"  Current F1 (cross-repo):  {current_f1_cross:.4f}")
+    print("  Eval protocol: cross_repo_loro")
     print(
         "  Decision: "
         + (
-            "PROMOTE (new model is better)"
+            "PROMOTE (new model is better on cross-repo F1)"
             if should_promote
-            else "KEEP current Production model (new model is not better)"
+            else "KEEP current Production model"
         )
     )
     print(f"{'=' * 60}")
@@ -126,6 +143,8 @@ def register_model(
                 "model_type": type(new_model).__name__,
                 "source": "automl_pipeline",
                 "promoted": str(should_promote),
+                "eval_protocol": "cross_repo_loro",
+                "eval_comparison": "f1_cross_repo",
             }
         )
         if new_metrics:

@@ -4,12 +4,11 @@ Pytest configuration for smoke tests.
 Provides fixtures for API/webhook URLs, test payloads, and dashboard logging.
 """
 
+import os
 import time
 
-import os
 import pytest
 import requests
-
 
 # --- Fixtures ---
 

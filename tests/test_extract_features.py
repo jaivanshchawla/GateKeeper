@@ -24,6 +24,7 @@ def create_mock_commit(
     hash: str = "abc123",
     author_name: str = "TestAuthor",
     author_date: datetime = None,
+    committer_date: datetime = None,
     insertions: int = 10,
     deletions: int = 5,
     files: int = 2,
@@ -33,6 +34,8 @@ def create_mock_commit(
     """Create a mock PyDriller commit object for testing."""
     if author_date is None:
         author_date = datetime(2024, 1, 15, 10, 30, 0)
+    if committer_date is None:
+        committer_date = author_date
 
     if modified_files is None:
         modified_files = [
@@ -53,6 +56,7 @@ def create_mock_commit(
         hash=hash,
         author=SimpleNamespace(name=author_name),
         author_date=author_date,
+        committer_date=committer_date,
         insertions=insertions,
         deletions=deletions,
         files=files,

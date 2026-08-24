@@ -44,17 +44,31 @@ class CommitFeatureExtractor:
         # Store commit info for labeling (hash -> {date, files})
         self.commit_info = {}
 
+    def seed_author_counts(self, counts: dict[str, int]) -> None:
+        """Seed author prior commit counts from full repo history.
+
+        Call this BEFORE processing any commits so that author_prior_commits
+        starts at the correct value (the author's commit count before the
+        training window).
+        """
+        self.author_prior_counts.update(counts)
+
     def _extract_features_from_commit(self, commit) -> dict:
-        """Extract features from a single commit object."""
+        """Extract features from a single commit object.
+
+        Uses committer_date (UTC-normalized) for temporal features and
+        the full commit message for text features.  This is the SINGLE
+        source of truth — every feature is computed here and nowhere else.
+        """
         # Basic commit info
         lines_added = commit.insertions
         lines_deleted = commit.deletions
         files_touched = commit.files
-        
+
         # Collect file paths for this commit
         touched_files = set()
         directories = set()
-        
+
         for modified_file in commit.modified_files:
             file_path = modified_file.new_path or modified_file.old_path
             if file_path:
@@ -62,15 +76,18 @@ class CommitFeatureExtractor:
                 dir_path = os.path.dirname(file_path)
                 if dir_path:
                     directories.add(dir_path)
-                
-                # Store file touch for labeling
-                self.file_touches[file_path].append((commit.hash, commit.author_date))
-        
+
+                # Store file touch for labeling (use committer_date, UTC)
+                ct_utc = commit.committer_date
+                if ct_utc.tzinfo is not None:
+                    ct_utc = ct_utc.astimezone(__import__('datetime').timezone.utc)
+                self.file_touches[file_path].append((commit.hash, ct_utc))
+
         num_directories = len(directories)
-        
+
         # Store commit info for labeling
         self.commit_info[commit.hash] = {
-            "date": commit.author_date,
+            "date": commit.committer_date,
             "files": touched_files,
             "msg": commit.msg or ""
         }
@@ -79,12 +96,14 @@ class CommitFeatureExtractor:
         author_name = commit.author.name
         author_prior_commits = self.author_prior_counts[author_name]
 
-        # Temporal features
-        commit_date = commit.author_date
+        # Temporal features — committer_date, normalized to UTC
+        commit_date = commit.committer_date
+        if commit_date.tzinfo is not None:
+            commit_date = commit_date.astimezone(__import__('datetime').timezone.utc)
         hour_of_day = commit_date.hour
         day_of_week = commit_date.weekday()  # 0=Monday, 6=Sunday
 
-        # Commit message features
+        # Commit message features — FULL message, not just subject
         commit_msg = commit.msg or ""
         commit_msg_length = len(commit_msg)
         is_fix_bug_revert = any(
@@ -98,7 +117,7 @@ class CommitFeatureExtractor:
         return {
             "hash": commit.hash,
             "author": author_name,
-            "date": commit_date,
+            "date": commit.committer_date,
             "lines_added": lines_added,
             "lines_deleted": lines_deleted,
             "files_touched": files_touched,

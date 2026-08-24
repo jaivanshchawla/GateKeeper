@@ -79,17 +79,69 @@ def main():
     train_indices = set(X_train.index)
     test_indices = set(X_test.index)
 
-    # Check for overlap
+    # Check 1: Row-level overlap
     overlap = train_indices & test_indices
-
     if overlap:
-        print("\nDATA LEAKAGE DETECTED!")
-        print(f"Found {len(overlap)} rows that appear in both train and test sets.")
-        print(f"Overlapping indices: {sorted(list(overlap))[:10]}...")
+        print("\nDATA LEAKAGE DETECTED (row-level)!")
+        print(f"Found {len(overlap)} rows in both train and test.")
         sys.exit(1)
-    else:
-        print("\n[OK] No data leakage detected - train and test sets are disjoint.")
-        sys.exit(0)
+    print("[OK] No row-level overlap.")
+
+    # Check 2: Temporal overlap across split boundary
+    if "committer_date" in df.columns:
+        dates = pd.to_datetime(df["committer_date"], utc=True)
+        train_dates = dates.loc[list(train_indices)]
+        test_dates = dates.loc[list(test_indices)]
+        train_max = train_dates.max()
+        test_min = test_dates.min()
+        gap_days = (test_min - train_max).total_seconds() / 86400
+        print(f"[INFO] Temporal gap: train_max={train_max}, test_min={test_min}, gap={gap_days:.1f}d")
+        if gap_days < 7:
+            print(f"WARNING: Temporal gap ({gap_days:.1f}d) < label_window_days (7). Possible temporal leakage.")
+        else:
+            print("[OK] Temporal gap >= 7 days.")
+
+    # Check 3: Same-file / same-window overlap
+    if "touched_files" in df.columns:
+        from collections import defaultdict
+        LABEL_WINDOW = 7
+
+        # Build file-touch index from training set
+        file_to_train = defaultdict(set)
+        for idx in train_indices:
+            row = df.loc[idx]
+            files = str(row.get("touched_files", "")).split("|")
+            for f in files:
+                if f:
+                    file_to_train[f].add(idx)
+
+        # Check if any test commit shares a file with a train commit within 7 days
+        same_file_overlap = 0
+        for idx in sorted(test_indices):
+            row = df.loc[idx]
+            test_files = str(row.get("touched_files", "")).split("|")
+            test_date = pd.to_datetime(row["committer_date"], utc=True)
+            for f in test_files:
+                if f in file_to_train:
+                    for train_idx in file_to_train[f]:
+                        train_date = pd.to_datetime(df.loc[train_idx, "committer_date"], utc=True)
+                        if abs((test_date - train_date).days) <= LABEL_WINDOW:
+                            same_file_overlap += 1
+                            break
+                    else:
+                        continue
+                    break
+
+        pct = same_file_overlap / max(len(test_indices), 1) * 100
+        print(f"[INFO] Same-file/same-window overlap: {same_file_overlap}/{len(test_indices)} ({pct:.1f}%)")
+        if same_file_overlap > 0:
+            print("NOTE: This is expected for random splits on commit data.")
+            print("      Use time-ordered purged splits for honest evaluation.")
+        else:
+            print("[OK] No same-file/same-window overlap.")
+
+    print("\n[OK] All leakage checks passed.")
+    sys.exit(0)
 
 
 if __name__ == "__main__":

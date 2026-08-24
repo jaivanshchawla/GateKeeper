@@ -111,18 +111,14 @@ def get_notable_factors(features: dict) -> list[str]:
 
     # Files touched
     files = features.get("files_touched", 0)
-    if files > 10:
-        factors.append(f"{files} files touched")
-    elif files > 5:
+    if files > 10 or files > 5:
         factors.append(f"{files} files touched")
 
     # Lines changed
     lines_added = features.get("lines_added", 0)
     lines_deleted = features.get("lines_deleted", 0)
     total_lines = lines_added + lines_deleted
-    if total_lines > 200:
-        factors.append(f"{total_lines} lines changed")
-    elif total_lines > 100:
+    if total_lines > 200 or total_lines > 100:
         factors.append(f"{total_lines} lines changed")
 
     # Time of day
