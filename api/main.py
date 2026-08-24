@@ -150,8 +150,16 @@ def _load_model():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: load model on startup."""
+    """Application lifespan: load model and warmup on startup."""
     _load_model()
+    # Warmup: run one prediction to trigger lazy init (fixes p99 latency)
+    if model is not None:
+        try:
+            dummy = np.zeros((1, len(FEATURE_COLUMNS)))
+            model.predict_proba(dummy)
+            print("Model warmup complete")
+        except Exception as e:
+            print(f"Warmup failed (non-fatal): {e}")
     yield
     # No cleanup needed
 
