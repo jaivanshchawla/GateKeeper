@@ -26,13 +26,13 @@ project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from kfp import dsl  # noqa: E402
+from kfp import dsl
 
-from pipelines.components.automl_search import automl_search  # noqa: E402
-from pipelines.components.feature_eng import feature_eng  # noqa: E402
-from pipelines.components.ingest import ingest  # noqa: E402
-from pipelines.components.register_model import register_model  # noqa: E402
-from pipelines.components.validate import validate  # noqa: E402
+from pipelines.components.automl_search import automl_search
+from pipelines.components.feature_eng import feature_eng
+from pipelines.components.ingest import ingest
+from pipelines.components.register_model import register_model
+from pipelines.components.validate import validate
 
 
 @dsl.pipeline(

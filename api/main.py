@@ -175,7 +175,7 @@ async def lifespan(app: FastAPI):
     # Initialize SHAP explainer
     global explainer
     try:
-        from ml.explainer import _load_model_and_explainer, explain, format_explanation
+        from ml.explainer import _load_model_and_explainer
         _load_model_and_explainer()
         explainer = True  # Signal that explainer is available
         print("SHAP explainer initialized")
