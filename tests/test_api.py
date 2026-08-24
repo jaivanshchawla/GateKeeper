@@ -77,6 +77,23 @@ def client():
     app_module.app.router.lifespan_context = original_lifespan
 
 
+def make_features(**overrides):
+    """Build a complete features payload with sensible defaults for all 22 fields."""
+    defaults = {
+        "lines_added": 10, "lines_deleted": 0, "files_touched": 1,
+        "dirs_touched": 1, "author_prior_commits": 0, "hour_of_day": 10,
+        "day_of_week": 2, "commit_msg_length": 30, "is_fix_bug_revert": 0,
+        "file_prior_changes_max": 5, "file_prior_changes_mean": 3.0,
+        "file_prior_risky_max": 1, "file_prior_risky_mean": 0.5,
+        "file_revert_count_max": 0, "file_revert_count_mean": 0.0,
+        "file_age_days_max": 30, "file_age_days_mean": 20.0,
+        "churn_ratio": 0.0, "change_entropy": 0.0, "max_file_churn": 10.0,
+        "is_test_only": 0, "test_to_code_ratio": 0.0, "config_touch": 0,
+    }
+    defaults.update(overrides)
+    return {"features": defaults}
+
+
 class TestHealthEndpoint:
     """Tests for the /health endpoint."""
 
@@ -146,19 +163,7 @@ class TestPredictEndpoint:
 
     def test_predict_valid_input_returns_200(self, client):
         """Valid features should return 200 with risk_score and risk_label."""
-        valid_payload = {
-            "features": {
-                "lines_added": 42,
-                "lines_deleted": 10,
-                "files_touched": 3,
-                "dirs_touched": 2,
-                "author_prior_commits": 5,
-                "hour_of_day": 14,
-                "day_of_week": 1,
-                "commit_msg_length": 45,
-                "is_fix_bug_revert": 0,
-            }
-        }
+        valid_payload = make_features(lines_added=42, lines_deleted=10, files_touched=3, dirs_touched=2, author_prior_commits=5, hour_of_day=14, day_of_week=1, commit_msg_length=45)
 
         response = client.post("/predict", json=valid_payload)
         assert response.status_code == 200
@@ -171,19 +176,7 @@ class TestPredictEndpoint:
 
     def test_predict_risk_score_in_valid_range(self, client):
         """Risk score should be between 0 and 1."""
-        valid_payload = {
-            "features": {
-                "lines_added": 100,
-                "lines_deleted": 50,
-                "files_touched": 10,
-                "dirs_touched": 5,
-                "author_prior_commits": 20,
-                "hour_of_day": 9,
-                "day_of_week": 0,
-                "commit_msg_length": 80,
-                "is_fix_bug_revert": 1,
-            }
-        }
+        valid_payload = make_features(lines_added=100, lines_deleted=50, files_touched=10, dirs_touched=5, author_prior_commits=20, hour_of_day=9, day_of_week=0, commit_msg_length=80, is_fix_bug_revert=1)
 
         response = client.post("/predict", json=valid_payload)
         data = response.json()
@@ -192,22 +185,8 @@ class TestPredictEndpoint:
 
     def test_predict_risk_label_matches_score_thresholds(self, client):
         """Risk label should match the percentile-based score thresholds."""
-        # Test with high risk score (mock returns 0.85)
-        # Global thresholds: high >= 0.8619, medium >= 0.7536, low < 0.7536
-        # Mock returns 0.85, which is medium (0.7536 <= 0.85 < 0.8619)
-        valid_payload = {
-            "features": {
-                "lines_added": 10,
-                "lines_deleted": 0,
-                "files_touched": 1,
-                "dirs_touched": 1,
-                "author_prior_commits": 0,
-                "hour_of_day": 10,
-                "day_of_week": 2,
-                "commit_msg_length": 30,
-                "is_fix_bug_revert": 1,
-            }
-        }
+        # Mock returns 0.85 → medium under percentile thresholds
+        valid_payload = make_features(is_fix_bug_revert=1)
 
         response = client.post("/predict", json=valid_payload)
         data = response.json()
@@ -231,20 +210,7 @@ class TestPredictEndpoint:
 
     def test_predict_returns_commit_hash_if_provided(self, client):
         """Response should include commit_hash if provided in features."""
-        valid_payload = {
-            "features": {
-                "hash": "abc123def456", # pragma: allowlist secret
-                "lines_added": 10,
-                "lines_deleted": 0,
-                "files_touched": 1,
-                "dirs_touched": 1,
-                "author_prior_commits": 0,
-                "hour_of_day": 10,
-                "day_of_week": 2,
-                "commit_msg_length": 30,
-                "is_fix_bug_revert": 0,
-            }
-        }
+        valid_payload = make_features(hash="abc123def456") # pragma: allowlist secret
 
         response = client.post("/predict", json=valid_payload)
         data = response.json()
@@ -273,19 +239,7 @@ class TestModelNotLoaded:
             app_module.app.router.lifespan_context = mock_lifespan
 
             with TestClient(app_module.app) as c:
-                valid_payload = {
-                    "features": {
-                        "lines_added": 10,
-                        "lines_deleted": 0,
-                        "files_touched": 1,
-                        "dirs_touched": 1,
-                        "author_prior_commits": 0,
-                        "hour_of_day": 10,
-                        "day_of_week": 2,
-                        "commit_msg_length": 30,
-                        "is_fix_bug_revert": 0,
-                    }
-                }
+                valid_payload = make_features()
 
                 response = c.post("/predict", json=valid_payload)
                 assert response.status_code == 503
