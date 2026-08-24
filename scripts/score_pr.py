@@ -165,26 +165,65 @@ def format_markdown(
     risk_label: str,
     factors: list[str],
     author: str = "",
+    explanations: list[dict] = None,
+    touched_files_info: list[dict] = None,
 ) -> str:
-    """Format the risk assessment as markdown."""
-    # Emoji for risk level (use ASCII-safe characters for Windows compatibility)
+    """Format the risk assessment as markdown.
+
+    Args:
+        commit_hash: commit SHA
+        risk_score: model score (0-1)
+        risk_label: low/medium/high
+        factors: list of plain-language factor strings (legacy fallback)
+        author: commit author name
+        explanations: list of SHAP explanation dicts (preferred over factors)
+        touched_files_info: list of dicts with file metadata for per-file table
+    """
+    # Emoji for risk level
     emoji = {"low": "[LOW]", "medium": "[MED]", "high": "[HIGH]"}.get(risk_label, "[UNK]")
 
-    # Format factors as bullet points
-    factors_text = "\n".join(f"  - {f}" for f in factors)
-
     author_text = f" by **{author}**" if author else ""
+
+    # SHAP explanations section (preferred) or fallback to factors
+    if explanations:
+        reasons_lines = []
+        for i, exp in enumerate(explanations, 1):
+            reasons_lines.append(f"{i}. {exp.get('human_readable', exp.get('description', ''))}")
+        reasons_text = "\n".join(reasons_lines)
+    else:
+        reasons_text = "\n".join(f"  - {f}" for f in factors)
+
+    # Per-file table (if file metadata available)
+    file_table = ""
+    if touched_files_info:
+        file_rows = []
+        for fi in touched_files_info[:10]:  # Cap at 10 files
+            name = fi.get("name", "unknown")
+            # Truncate long paths
+            if len(name) > 60:
+                name = "..." + name[-57:]
+            prior = fi.get("prior_changes", 0)
+            reverts = fi.get("revert_count", 0)
+            risk_marker = " !" if reverts > 0 else ""
+            file_rows.append(f"| `{name}` | {prior} | {reverts}{risk_marker} |")
+        file_table = (
+            "\n### File History\n\n"
+            "| File | Prior Changes | Reverts |\n"
+            "|------|---------------|----------|\n"
+            + "\n".join(file_rows)
+            + ("\n\n_...and more files" if len(touched_files_info) > 10 else "")
+        )
 
     markdown = f"""## Gatekeeper Risk Assessment{author_text}
 
 | Metric | Value |
 |--------|-------|
-| **Risk Score** | {risk_score:.4f} |
-| **Risk Level** | {emoji} **{risk_label.upper()}** |
+| **Band** | {emoji} **{risk_label.upper()}** |
 | **Commit** | `{commit_hash[:12]}` |
 
-### Notable Factors
-{factors_text}
+### Why this score?
+{reasons_text}
+{file_table}
 
 ---
 *Scored by [Gatekeeper](https://github.com/jaivanshchawla/GateKeeper) - automated commit risk analysis*"""
@@ -243,11 +282,54 @@ def main():
     # Get notable factors (SHAP-based with heuristic fallback)
     factors = get_notable_factors(features, features_array=features_array, feature_columns=feature_columns)
 
+    # Get SHAP explanations (structured)
+    explanations = []
+    try:
+        from ml.explainer import explain, format_explanation as fmt_exp
+        raw_factors = explain(features_array, feature_columns=feature_columns, top_k=3)
+        human_readable = fmt_exp(raw_factors, features)
+        explanations = [
+            {**f, "human_readable": hr}
+            for f, hr in zip(raw_factors, human_readable)
+        ]
+    except Exception:
+        pass  # Non-fatal: use heuristic factors instead
+
     # Get author name
     author = features.get("author", "")
 
+    # Get file metadata for per-file table
+    touched_files_info = []
+    try:
+        touched_files = features.get("touched_files", "")
+        if touched_files:
+            file_list = [f.strip() for f in str(touched_files).split(",") if f.strip()]
+            # Try to get file history from extractor
+            if hasattr(extractor, "file_touches") and extractor.file_touches:
+                for fp in file_list[:10]:
+                    touches = extractor.file_touches.get(fp, [])
+                    prior = len(touches)
+                    reverts = sum(1 for _, _, msg in touches if "revert" in msg.lower()) if any(len(t) == 3 for t in touches) else 0
+                    touched_files_info.append({
+                        "name": fp,
+                        "prior_changes": prior,
+                        "revert_count": reverts,
+                    })
+            else:
+                for fp in file_list[:10]:
+                    touched_files_info.append({
+                        "name": fp,
+                        "prior_changes": 0,
+                        "revert_count": 0,
+                    })
+    except Exception:
+        pass
+
     # Generate markdown
-    markdown = format_markdown(commit_hash, risk_score, risk_label, factors, author)
+    markdown = format_markdown(
+        commit_hash, risk_score, risk_label, factors, author,
+        explanations=explanations, touched_files_info=touched_files_info,
+    )
 
     # Print markdown to stdout
     print("\n" + "=" * 60)
