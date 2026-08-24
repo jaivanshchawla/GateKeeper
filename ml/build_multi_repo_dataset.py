@@ -59,6 +59,7 @@ REPOS = [
 
 SINCE = "2024-08-15"  # ~2 years ago
 MAX_COMMITS = 3000
+LABEL_BUFFER = 500  # extra commits mined for 7-day forward-look labeling
 OUTPUT_DIR = Path("data")
 CONFIG_PATH = Path("ml/config.yaml")
 COMBINED_OUTPUT = OUTPUT_DIR / "commit_features.csv"
@@ -109,6 +110,7 @@ def mine_repo(repo: dict, config: dict) -> pd.DataFrame | None:
             since=SINCE,
             label_window_days=label_window,
             max_commits=MAX_COMMITS,
+            label_buffer=LABEL_BUFFER,
         )
         df = extractor.extract_and_save(str(output_csv))
     except (OSError, RuntimeError, ValueError, KeyError) as e:

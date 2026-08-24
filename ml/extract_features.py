@@ -18,7 +18,7 @@ from pydriller import Repository
 class CommitFeatureExtractor:
     """Extracts features from git commit history and labels risky commits."""
 
-    def __init__(self, repo_path: str, since: str, label_window_days: int = 7, max_commits: int = 0):
+    def __init__(self, repo_path: str, since: str, label_window_days: int = 7, max_commits: int = 0, label_buffer: int = 500):
         """
         Initialize the feature extractor.
 
@@ -27,11 +27,16 @@ class CommitFeatureExtractor:
             since: Date string (YYYY-MM-DD) to start mining commits from
             label_window_days: Number of days after commit to check for re-risks
             max_commits: Stop after this many commits (0 = unlimited)
+            label_buffer: Extra commits to mine beyond max_commits for 7-day
+                forward-look labeling. Only the first max_commits rows become
+                training data; the buffer provides label context. Ignored when
+                max_commits=0.
         """
         self.repo_path = repo_path
         self.since = since
         self.label_window_days = label_window_days
         self.max_commits = max_commits
+        self.label_buffer = label_buffer
         self.author_prior_counts = defaultdict(int)
         
         # Store file touches for labeling (file_path -> [(commit_hash, commit_date)])
@@ -106,14 +111,22 @@ class CommitFeatureExtractor:
             "commit_msg": commit_msg,
         }
 
-    def _collect_all_commits(self) -> list[dict]:
+    def _collect_all_commits(self) -> tuple[list[dict], int]:
         """Collect all commits with features.
-        
-        Stops when EITHER the since-date boundary OR max_commits cap
-        is hit, whichever comes first.
+
+        Stops when EITHER the since-date boundary OR the effective cap
+        (max_commits + label_buffer) is hit, whichever comes first.
+
+        Returns:
+            Tuple of (all_features_list, training_count) where training_count
+            is the number of rows that should become training data (the rest
+            are buffer commits used only for label-checking).
         """
-        limit_str = f", max {self.max_commits}" if self.max_commits else ""
-        print(f"Mining commits from {self.repo_path} since {self.since}{limit_str}...")
+        effective_cap = 0
+        if self.max_commits:
+            effective_cap = self.max_commits + self.label_buffer
+        cap_str = f", effective cap {effective_cap}" if effective_cap else ""
+        print(f"Mining commits from {self.repo_path} since {self.since}{cap_str}...")
         
         features = []
         # Convert string date to datetime object for PyDriller
@@ -124,12 +137,13 @@ class CommitFeatureExtractor:
             feature_dict = self._extract_features_from_commit(commit)
             features.append(feature_dict)
             
-            if self.max_commits and len(features) >= self.max_commits:
-                print(f"Reached max-commits cap ({self.max_commits}), stopping.")
+            if effective_cap and len(features) >= effective_cap:
+                print(f"Reached effective cap ({effective_cap} = {self.max_commits} + {self.label_buffer} buffer), stopping.")
                 break
         
-        print(f"Collected {len(features)} commits.")
-        return features
+        training_count = min(len(features), self.max_commits) if self.max_commits else len(features)
+        print(f"Collected {len(features)} commits ({training_count} training + {len(features) - training_count} buffer for labeling).")
+        return features, training_count
 
     def _label_commits(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Label commits as risky (1) or safe (0)."""
@@ -195,21 +209,31 @@ class CommitFeatureExtractor:
     def extract_and_save(self, output_path: str) -> pd.DataFrame:
         """
         Extract features, label commits, and save to CSV.
-        
+
+        When a label_buffer is used, only the first max_commits rows
+        become training data — the buffer commits provide label context
+        but are discarded before saving.
+
         Args:
             output_path: Path to save the features CSV
-            
+
         Returns:
             DataFrame with features and labels
         """
-        # Collect all commits
-        features = self._collect_all_commits()
+        # Collect all commits (including buffer for labeling)
+        features, training_count = self._collect_all_commits()
         
-        # Create DataFrame
+        # Create DataFrame from ALL commits (needed for correct labeling)
         df = pd.DataFrame(features)
         
-        # Label commits (needs commit_msg for revert detection)
+        # Label commits using the full dataset (including buffer)
         df = self._label_commits(df)
+        
+        # Trim to training rows only (discard buffer commits)
+        if self.max_commits and len(df) > training_count:
+            buffer_size = len(df) - training_count
+            print(f"Discarding {buffer_size} buffer commits (used only for labeling).")
+            df = df.iloc[:training_count].copy()
         
         # Drop the commit_msg column (we don't need it for training)
         if "commit_msg" in df.columns:
@@ -261,6 +285,12 @@ def main():
         help="Stop after this many commits (0 = unlimited)"
     )
     parser.add_argument(
+        "--label-buffer",
+        type=int,
+        default=500,
+        help="Extra commits to mine beyond max-commits for 7-day forward-look labeling (default: 500)"
+    )
+    parser.add_argument(
         "--config",
         default="ml/config.yaml",
         help="Path to config file (default: ml/config.yaml)"
@@ -283,7 +313,8 @@ def main():
         repo_path=args.repo_path,
         since=args.since,
         label_window_days=label_window_days,
-        max_commits=args.max_commits
+        max_commits=args.max_commits,
+        label_buffer=args.label_buffer,
     )
     
     extractor.extract_and_save(args.output)

@@ -15,10 +15,10 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 | Source | 5 repositories across 5 languages: django/django (Python), facebook/react (JavaScript), rust-lang/rust (Rust), kubernetes/kubernetes (Go), apache/kafka (Java) |
 | Mining tool | PyDriller |
 | Date range | 2024-08-18 to 2026-08-18 (~2 years) |
-| Total commits | 5,896 |
+| Total commits | 7,896 |
 | Features | 9 (lines_added, lines_deleted, files_touched, dirs_touched, author_prior_commits, hour_of_day, day_of_week, commit_msg_length, is_fix_bug_revert) |
 | Label definition | 1 (risky) if: commit message contains "revert", OR any of its files were touched again by another commit within 7 days |
-| Class balance | 51.4% risky (3,033), 48.6% safe (2,863) |
+| Class balance | 48.3% risky (3,815), 51.7% safe (4,081) |
 
 ### Per-Repo Breakdown
 
@@ -26,18 +26,18 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 |------|----------|---------|--------|
 | django/django | Python | 2,038 | 45.2% |
 | facebook/react | JavaScript | 2,358 | 66.0% |
-| rust-lang/rust | Rust | 500 | 25.2% |
-| kubernetes/kubernetes | Go | 500 | 26.8% |
+| rust-lang/rust | Rust | 1,500 | 39.3% |
+| kubernetes/kubernetes | Go | 1,500 | 30.1% |
 | apache/kafka | Java | 500 | 59.2% |
 
-Note: Rust, Kubernetes, and Kafka were capped at 500 commits each due to the O(n²) labeling cost on large monorepos. Django and React used larger samples (2,000+).
+Note: Rust and Kubernetes were expanded to 1,500 commits each (from an initial 500) after a labeling-window bug fix — earlier runs mined only the oldest commits, missing the 7-day forward-look needed for correct labeling. A 500-commit buffer is now mined beyond the training cap to ensure every row has complete label context.
 
 ## Model Architecture
 
 | Property | Value |
 |----------|-------|
-| Type | RandomForestClassifier (scikit-learn) |
-| Hyperparameters | n_estimators=100, random_state=42 |
+| Type | LGBMClassifier (LightGBM) |
+| Hyperparameters | num_leaves=31, learning_rate=0.05, n_estimators=100 |
 | Selection | Best among LightGBM, RandomForest, LogisticRegression via AutoML comparison on F1 |
 | Serialized as | skops (models/gatekeeper_risk_model.skops) |
 
@@ -47,10 +47,10 @@ Evaluated on 20% held-out test set (stratified, random_state=42):
 
 | Metric | Value |
 |--------|-------|
-| Accuracy | 0.6822 |
-| Precision | 0.6859 |
-| Recall | 0.7051 |
-| F1 | 0.6954 |
+| Accuracy | 0.7127 |
+| Precision | 0.6988 |
+| Recall | 0.7117 |
+| F1 | 0.7052 |
 
 ### Leave-One-Repo-Out Generalization
 
@@ -58,13 +58,14 @@ To test whether the model generalizes beyond its training repos, we trained on 4
 
 | Held-out Repo | Accuracy | Precision | Recall | F1 |
 |---------------|----------|-----------|--------|----|
-| django | 0.621 | 0.568 | 0.678 | 0.618 |
-| react | 0.607 | 0.734 | 0.634 | 0.681 |
-| rust | 0.722 | 0.446 | 0.429 | 0.437 |
-| kubernetes | 0.748 | 0.547 | 0.351 | 0.427 |
-| kafka | 0.706 | 0.788 | 0.689 | 0.735 |
+| django | 0.6021 | 0.5433 | 0.7492 | 0.6298 |
+| react | 0.5992 | 0.7235 | 0.6356 | 0.6767 |
+| rust | 0.7053 | 0.6529 | 0.5356 | 0.5885 |
+| kubernetes | 0.7593 | 0.6051 | 0.5796 | 0.5921 |
+| kafka | 0.6860 | 0.7473 | 0.7095 | 0.7279 |
+| **Average** | | | | **0.6430** |
 
-**Interpretation:** The model generalizes well to repositories with similar development patterns (django, react, kafka all >0.6 F1). Performance drops for Rust and Kubernetes — repositories with fundamentally different commit conventions (Rust's bors merge commits, Kubernetes' bot-heavy workflow). The per-author-history feature likely contributes to this gap: the model learned Django/React contributor patterns that don't transfer to Rust's contributor model.
+**Interpretation:** With the corrected labeling and 3x more Rust/K8s data, all repos now achieve >0.58 F1. The model generalizes reasonably across Python, JavaScript, and Java (all >0.62 F1). Rust and Kubernetes remain the weakest points (~0.59 F1) — their commit patterns (Rust's bors merge automation, Kubernetes' bot-heavy workflow with large batch merges) differ structurally from the application-layer repos. When held out, the model defaults to predicting "low risk" for 40-49% of Rust/K8s commits (vs 4% for Django), suggesting it hasn't fully learned systems-language risk signatures. This is a genuine domain gap documented as a known limitation.
 
 ### Benchmark: Neural Network Comparison
 
@@ -82,7 +83,7 @@ A Fairlearn-based check was run on the test set to evaluate whether the model is
 
 1. **Noisy labels:** The 7-day re-touch label is somewhat noisy. A commit that scores right at the medium/low boundary (risk_score ≈ 0.50) may have been labeled "risky" simply because a follow-up bugfix touched the same files — not because the original commit was inherently dangerous. This is an acknowledged source of label noise.
 
-2. **Single-repo training:** The model is trained exclusively on django/django commits. It may not generalize well to repositories with different commit conventions, team sizes, or development workflows.
+2. **Partial generalization:** The model generalizes well across application-layer repos (Python, JavaScript, Java) but shows weaker performance on systems/infrastructure languages (Rust F1=0.589, Kubernetes F1=0.592). Systems-language commits follow different conventions (merge automation, bot workflows, large batch merges) that the current feature set doesn't fully capture.
 
 3. **Temporal drift:** Code review practices, CI/CD tooling, and contributor behavior evolve over time. The model was trained on 3 years of data (2023-2026) and may not capture recent shifts.
 
@@ -92,16 +93,17 @@ A Fairlearn-based check was run on the test set to evaluate whether the model is
 
 6. **Binary risk framing:** The model outputs a continuous probability but the gate logic uses hard thresholds (<0.3 low, 0.3-0.6 medium, >0.6 high). Commits near these boundaries are inherently uncertain.
 
-7. **Train/test overfitting:** RandomForest (max_depth=None) shows more extreme scores on training data (51.7% labeled "low") than test data (27.4% labeled "low") — classic unpruned-tree overfitting. The 100 unpruned decision trees memorize training patterns, producing confident extreme scores on seen data, but revert to more moderate predictions on unseen data. Real-world confidence is likely closer to test-set behavior. **Documented future improvement:** set max_depth=10 or increase min_samples_leaf to reduce overfitting without retraining.
+7. **Threshold-recalibration gap:** The risk thresholds (0.3/0.6) are fixed global values. When the model is swapped (e.g., LightGBM → RandomForest → LightGBM), the score distribution shifts and the thresholds may no longer produce the intended 27/40/32 split. **Documented MLOps gap:** register_model.py could compute new threshold boundaries from the new model's score percentiles on each promotion, rather than using fixed global values.
 
-8. **Threshold-recalibration gap:** The risk thresholds (0.3/0.6) were set for LightGBM and never recalibrated when Phase 7 promoted a RandomForest instead. Currently still produces a reasonable 27/40/32 score distribution split, but nothing guarantees this holds for future model swaps — the pipeline selects by F1 but doesn't validate or recalibrate downstream thresholds. **Documented MLOps gap:** register_model.py could compute new threshold boundaries from the new model's score percentiles on each promotion, rather than using fixed global values. This is a natural next-iteration improvement.
+8. **Shallow clone constraint:** CI environments (GitHub Actions for Gates 2, 3) use shallow-cloned repos, so `author_prior_commits` is relative to the shallow clone depth rather than the repo's full history. This limits the feature's accuracy in production scoring.
 
 ## Version History
 
 | Version | Date | Model Type | F1 | Training Data | Notes |
 |---------|------|------------|-----|---------------|-------|
 | v1-v3 | 2026-08-09 | LightGBM | 0.6588 | Django only | Initial training |
-| v4 (current) | 2026-08-18 | LGBMClassifier | 0.6954 | 5 repos (5,896 commits) | Multi-repo retraining, promoted to Production |
+| v5 (current) | 2026-08-24 | LGBMClassifier | 0.7052 | 5 repos (7,896 commits) | Buffer labeling fix, expanded Rust/K8s to 1,500 each |
+| v4 | 2026-08-18 | LGBMClassifier | 0.6954 | 5 repos (5,896 commits) | Multi-repo retraining (had labeling bug) |
 
 ## Cloud Deployment
 
