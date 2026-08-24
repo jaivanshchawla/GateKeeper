@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+lightgbm
+skops
+numpy
+pandas
+scikit-learn
+pyyaml
+mlflow
+prometheus-fastapi-instrumentator
+requests
+gunicorn

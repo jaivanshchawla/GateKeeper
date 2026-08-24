@@ -5,9 +5,9 @@ WORKDIR /app
 # Install system dependencies (libgomp for LightGBM)
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy slim requirements and install only serving dependencies
+COPY api/requirements-slim.txt ./requirements-slim.txt
+RUN pip install --no-cache-dir -r requirements-slim.txt
 
 # Copy source code
 COPY api/ ./api/
