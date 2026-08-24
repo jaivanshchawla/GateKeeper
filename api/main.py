@@ -31,6 +31,8 @@ def load_config():
 
 config = load_config()
 FEATURE_COLUMNS = config.get("feature_columns", [])
+THRESHOLDS = config.get("thresholds", {})
+DEFAULT_THRESHOLDS = THRESHOLDS.get("_global", {"high": 0.8619, "medium": 0.7536})
 
 # Pydantic models for request/response
 class Features(BaseModel):
@@ -197,17 +199,19 @@ async def predict(request: PredictionRequest):
         # Get prediction probability of risky class (class 1)
         risk_score = float(model.predict_proba(features_array)[0][1])
         
-        # Determine risk label based on thresholds
-        # Note: <= 0.6 for medium means exactly 0.60 is medium (upper edge),
-        # not high. This matches the stated definition: <0.3 low, 0.3-0.6
-        # medium, >0.6 high. Thresholds were originally set for LightGBM
-        # and not recalibrated after Phase 7 promoted RandomForest.
-        if risk_score < 0.3:
-            risk_label = "low"
-        elif risk_score <= 0.6:
+        # Determine risk label using percentile-based thresholds.
+        # Per-repo cutoffs from config.yaml; fallback to _global for unknown repos.
+        repo_name = getattr(request.features, "source_repo", "")
+        repo_thresholds = THRESHOLDS.get(repo_name, DEFAULT_THRESHOLDS)
+        high_cutoff = repo_thresholds["high"]
+        medium_cutoff = repo_thresholds["medium"]
+
+        if risk_score >= high_cutoff:
+            risk_label = "high"
+        elif risk_score >= medium_cutoff:
             risk_label = "medium"
         else:
-            risk_label = "high"
+            risk_label = "low"
         
         # Get commit hash if provided (optional field)
         commit_hash = getattr(request.features, "hash", "")

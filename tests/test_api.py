@@ -191,8 +191,10 @@ class TestPredictEndpoint:
         assert 0.0 <= data["risk_score"] <= 1.0
 
     def test_predict_risk_label_matches_score_thresholds(self, client):
-        """Risk label should match the score thresholds."""
+        """Risk label should match the percentile-based score thresholds."""
         # Test with high risk score (mock returns 0.85)
+        # Global thresholds: high >= 0.8619, medium >= 0.7536, low < 0.7536
+        # Mock returns 0.85, which is medium (0.7536 <= 0.85 < 0.8619)
         valid_payload = {
             "features": {
                 "lines_added": 10,
@@ -210,8 +212,9 @@ class TestPredictEndpoint:
         response = client.post("/predict", json=valid_payload)
         data = response.json()
 
-        # Mock returns 0.85, which is > 0.6, so label should be "high"
-        assert data["risk_label"] == "high"
+        # Mock returns 0.85 → medium under percentile thresholds
+        assert data["risk_label"] == "medium"
+        assert 0.7536 <= data["risk_score"] < 0.8619
 
     def test_predict_missing_features_returns_422(self, client):
         """Missing required features should return 422 (Pydantic validation)."""

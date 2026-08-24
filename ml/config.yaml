@@ -18,3 +18,27 @@ lightgbm_params:
 
 # Label window in days for identifying risky commits
 label_window_days: 7
+
+# Percentile-based risk thresholds (replaces absolute 0.3/0.6 cutoffs).
+# Computed from the full training set's score distribution per repo.
+# high: top 10% of that repo's scores, medium: next 15%, low: bottom 75%.
+# _global: fallback for repos not in the training set.
+thresholds:
+  django:
+    high: 0.8029
+    medium: 0.6841
+  react:
+    high: 0.8839
+    medium: 0.8042
+  rust:
+    high: 0.8632
+    medium: 0.7659
+  kubernetes:
+    high: 0.8543
+    medium: 0.7301
+  kafka:
+    high: 0.8752
+    medium: 0.7573
+  _global:
+    high: 0.8619
+    medium: 0.7536

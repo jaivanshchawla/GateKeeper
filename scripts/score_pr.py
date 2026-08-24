@@ -56,20 +56,25 @@ def load_config(config_path: str = "ml/config.yaml"):
         return yaml.safe_load(f)
 
 
-def get_risk_label(score: float) -> str:
-    """Determine risk label based on score thresholds.
-    
-    Thresholds: <0.3 low, 0.3-0.6 medium (inclusive), >0.6 high.
-    Note: <= 0.6 for medium means exactly 0.60 is medium (upper edge).
-    These thresholds were originally set for LightGBM; see model_card.md
-    limitation #8 for the recalibration gap.
+def get_risk_label(score: float, repo_name: str = "") -> str:
+    """Determine risk label using percentile-based thresholds.
+
+    Per-repo cutoffs from config.yaml; fallback to _global for unknown repos.
+    high: top 10% of that repo's score distribution,
+    medium: next 15%, low: bottom 75%.
     """
-    if score < 0.3:
-        return "low"
-    elif score <= 0.6:
+    config = load_config()
+    thresholds = config.get("thresholds", {})
+    repo_thresh = thresholds.get(repo_name, thresholds.get("_global", {}))
+    high_cutoff = repo_thresh.get("high", 0.8619)
+    medium_cutoff = repo_thresh.get("medium", 0.7536)
+
+    if score >= high_cutoff:
+        return "high"
+    elif score >= medium_cutoff:
         return "medium"
     else:
-        return "high"
+        return "low"
 
 
 def log_to_dashboard(issue_type: str, repo: str, details: str, 
@@ -226,7 +231,8 @@ def main():
 
     # Get prediction
     risk_score = float(model.predict_proba(features_array)[0][1])
-    risk_label = get_risk_label(risk_score)
+    repo_name = os.path.basename(repo_path) if repo_path else ""
+    risk_label = get_risk_label(risk_score, repo_name)
 
     # Get notable factors
     factors = get_notable_factors(features)
