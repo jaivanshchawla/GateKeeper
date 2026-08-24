@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 lightgbm
+shap
 skops
 numpy
 pandas

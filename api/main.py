@@ -74,19 +74,30 @@ class PredictionRequest(BaseModel):
     """Request model for prediction endpoint."""
     features: Features
 
+class ExplanationItem(BaseModel):
+    """A single SHAP explanation factor."""
+    feature: str
+    description: str
+    shap_value: float
+    direction: str
+    feature_value: float
+    human_readable: str
+
 class PredictionResponse(BaseModel):
     """Response model for prediction endpoint."""
     risk_score: float
     risk_label: str
     commit_hash: str = ""
+    explanations: list[ExplanationItem] = []
 
 class HealthResponse(BaseModel):
     """Response model for health endpoint."""
     status: str
     model_loaded: bool
 
-# Global variable for loaded model
+# Global variables
 model = None
+explainer = None  # SHAP TreeExplainer, loaded at startup
 
 
 def _load_model():
@@ -161,6 +172,17 @@ async def lifespan(app: FastAPI):
             print("Model warmup complete")
         except Exception as e:
             print(f"Warmup failed (non-fatal): {e}")
+    # Initialize SHAP explainer
+    global explainer
+    try:
+        from ml.explainer import _load_model_and_explainer, explain, format_explanation
+        _load_model_and_explainer()
+        explainer = True  # Signal that explainer is available
+        print("SHAP explainer initialized")
+    except Exception as e:
+        print(f"SHAP explainer init failed (non-fatal): {e}")
+        explainer = None
+
     yield
     # No cleanup needed
 
@@ -224,11 +246,35 @@ async def predict(request: PredictionRequest):
         
         # Get commit hash if provided (optional field)
         commit_hash = getattr(request.features, "hash", "")
-        
+
+        features_dict = {col: getattr(request.features, col) for col in FEATURE_COLUMNS}
+
+        # SHAP explanations
+        explanations = []
+        if explainer is not None:
+            try:
+                from ml.explainer import explain, format_explanation
+                factors = explain(features_array, top_k=3)
+                human_readable = format_explanation(factors, features_dict)
+                explanations = [
+                    ExplanationItem(
+                        feature=f["feature"],
+                        description=f["description"],
+                        shap_value=f["shap_value"],
+                        direction=f["direction"],
+                        feature_value=f["feature_value"],
+                        human_readable=hr,
+                    )
+                    for f, hr in zip(factors, human_readable)
+                ]
+            except Exception:
+                pass  # Non-fatal: prediction still works without explanations
+
         return PredictionResponse(
             risk_score=risk_score,
             risk_label=risk_label,
-            commit_hash=str(commit_hash) if commit_hash else ""
+            commit_hash=str(commit_hash) if commit_hash else "",
+            explanations=explanations,
         )
     except HTTPException:
         raise  # Re-raise HTTP exceptions as-is

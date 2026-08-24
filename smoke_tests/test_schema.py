@@ -17,7 +17,7 @@ def test_predict_response_schema(api_url, safe_payload, wait_for_api):
     data = response.json()
 
     # Check all expected keys are present
-    expected_keys = {"risk_score", "risk_label", "commit_hash"}
+    expected_keys = {"risk_score", "risk_label", "commit_hash", "explanations"}
     actual_keys = set(data.keys())
     assert actual_keys == expected_keys, f"Expected keys {expected_keys}, got {actual_keys}"
 
@@ -31,6 +31,13 @@ def test_predict_response_schema(api_url, safe_payload, wait_for_api):
 
     # Validate commit_hash is a string
     assert isinstance(data["commit_hash"], str), f"commit_hash should be string, got {type(data['commit_hash'])}"
+
+    # Validate explanations is a list of dicts
+    assert isinstance(data["explanations"], list), f"explanations should be list, got {type(data['explanations'])}"
+    for exp in data["explanations"]:
+        assert "feature" in exp, f"explanation missing 'feature' key: {exp}"
+        assert "shap_value" in exp, f"explanation missing 'shap_value' key: {exp}"
+        assert "human_readable" in exp, f"explanation missing 'human_readable' key: {exp}"
 
     print(f"Schema validation passed: {data}")
 

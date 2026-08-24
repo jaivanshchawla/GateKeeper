@@ -110,46 +110,52 @@ def log_to_dashboard(issue_type: str, repo: str, details: str,
         print(f"WARNING: Failed to log to dashboard: {e}")
 
 
-def get_notable_factors(features: dict) -> list[str]:
-    """Extract 2-3 most notable contributing factors from features."""
-    factors = []
+def get_notable_factors(features: dict, features_array: np.ndarray = None,
+                         feature_columns: list[str] = None) -> list[str]:
+    """Extract 3 most notable contributing factors using SHAP.
 
-    # Files touched
+    Falls back to heuristic if SHAP is unavailable.
+    """
+    # Try SHAP first
+    if features_array is not None and feature_columns is not None:
+        try:
+            from ml.explainer import explain, format_explanation
+            factors = explain(features_array, feature_columns=feature_columns, top_k=3)
+            return format_explanation(factors, features)
+        except Exception:
+            pass  # Fall through to heuristic
+
+    # Heuristic fallback (same as before)
+    factors = []
     files = features.get("files_touched", 0)
     if files > 10 or files > 5:
         factors.append(f"{files} files touched")
 
-    # Lines changed
     lines_added = features.get("lines_added", 0)
     lines_deleted = features.get("lines_deleted", 0)
     total_lines = lines_added + lines_deleted
     if total_lines > 200 or total_lines > 100:
         factors.append(f"{total_lines} lines changed")
 
-    # Time of day
     hour = features.get("hour_of_day", 12)
     if hour < 6 or hour > 22:
         factors.append(f"changed at {hour}:00 (late night/early morning)")
     elif hour < 8:
         factors.append(f"changed at {hour}:00 (early morning)")
 
-    # Author experience
     prior_commits = features.get("author_prior_commits", 0)
     if prior_commits == 0:
         factors.append("first-time contributor")
     elif prior_commits < 5:
         factors.append(f"new contributor ({prior_commits} prior commits)")
 
-    # Fix/bug/revert keywords
     if features.get("is_fix_bug_revert", 0) == 1:
         factors.append("commit message contains fix/bug/revert keywords")
 
-    # Directories touched
     dirs = features.get("dirs_touched", 0)
     if dirs > 5:
         factors.append(f"spans {dirs} directories")
 
-    # Return top 3 factors
     return factors[:3] if factors else ["no notable risk factors"]
 
 
@@ -234,8 +240,8 @@ def main():
     repo_name = os.path.basename(repo_path) if repo_path else ""
     risk_label = get_risk_label(risk_score, repo_name)
 
-    # Get notable factors
-    factors = get_notable_factors(features)
+    # Get notable factors (SHAP-based with heuristic fallback)
+    factors = get_notable_factors(features, features_array=features_array, feature_columns=feature_columns)
 
     # Get author name
     author = features.get("author", "")

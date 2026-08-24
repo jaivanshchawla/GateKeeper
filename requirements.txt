@@ -26,3 +26,4 @@ keras
 prometheus-fastapi-instrumentator
 fairlearn
 joblib
+shap
