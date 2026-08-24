@@ -9,7 +9,6 @@ on LightGBM).
 """
 
 import os
-import time
 
 import numpy as np
 import shap
@@ -173,9 +172,6 @@ def format_explanation(factors: list[dict], features: dict = None) -> list[str]:
     for f in factors:
         shap_val = f["shap_value"]
         feat_val = f["feature_value"]
-        direction = "increases" if shap_val > 0 else "decreases"
-        magnitude = abs(shap_val)
-        name = f["description"]
 
         # Build contextual description
         if f["feature"] == "file_prior_changes_max":

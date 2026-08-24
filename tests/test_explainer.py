@@ -15,6 +15,9 @@ import time
 import numpy as np
 import pytest
 
+# Skip entire module if shap is not installed (pre-commit env)
+shap = pytest.importorskip("shap", reason="shap not installed")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 MODEL_PATH = os.path.join(
