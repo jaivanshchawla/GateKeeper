@@ -4,7 +4,6 @@ FastAPI application for Gatekeeper MLOps quality gate.
 Provides prediction endpoint for commit risk assessment.
 """
 
-import glob
 import os
 from contextlib import asynccontextmanager
 
@@ -126,7 +125,7 @@ def _load_model():
     try:
         model_uri = "models:/GatekeeperRiskPredictor/latest"
         model = mlflow.pyfunc.load_model(model_uri)
-        print(f"Loaded model from MLflow Model Registry")
+        print("Loaded model from MLflow Model Registry")
         return
     except Exception as e:
         print(f"Model Registry load failed: {e}")

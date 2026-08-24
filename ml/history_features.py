@@ -214,8 +214,6 @@ def compute_author_file_features(graph, commit_hash, commit_date, author_name, r
     Note: graph doesn't have author info, so we approximate using
     the CSV's author column for prior commits.
     """
-    info = graph.get(commit_hash, {})
-
     # We can't compute author-file features from the graph alone
     # (no author info). Return zeros — these will be computed from
     # the full commit history in a separate pass.
