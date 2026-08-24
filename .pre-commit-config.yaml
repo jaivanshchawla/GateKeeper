@@ -28,6 +28,24 @@ repos:
         always_run: true
         additional_dependencies: [pandas, scikit-learn, pyyaml]
 
+      # Gate 1: Score outgoing commits (warns on high, never blocks by default)
+      - id: gate1-score-push
+        name: Gate 1 — Score push risk
+        entry: python scripts/pre_push_score.py
+        language: python
+        language_version: python3
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+        additional_dependencies:
+          - numpy
+          - pandas
+          - scikit-learn
+          - lightgbm
+          - skops
+          - pyyaml
+          - pydriller
+
       # Local hook: Run pytest
       - id: pytest
         name: Run tests
