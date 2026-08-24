@@ -8,6 +8,7 @@
 # Per-file ignores for analysis scripts and model loading code
 [lint.per-file-ignores]
 "scripts/analysis_*.py" = ["E402", "B023", "RUF059", "PLW1510", "PIE810", "RUF100"]
+"pipelines/*.py" = ["E402"]
 "ml/rebuild_b2.py" = ["B023", "DTZ005", "DTZ007", "PLW1510", "RUF059"]
 "ml/history_features.py" = ["SIM222"]
 "tests/*" = ["DTZ001", "DTZ005", "RUF013", "BLE001"]
