@@ -237,7 +237,7 @@ def format_explanation(factors: list[dict], features: dict = None) -> list[str]:
             )
         else:
             descriptions.append(
-                f"{name}: {feat_val:.1f} "
+                f"{f['description']}: {feat_val:.1f} "
                 f"({'elevates' if shap_val > 0 else 'lowers'} risk)"
             )
 
