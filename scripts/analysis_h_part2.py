@@ -10,8 +10,13 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import (
-    accuracy_score, f1_score, precision_score, recall_score,
-    matthews_corrcoef, roc_auc_score, average_precision_score,
+    accuracy_score,
+    average_precision_score,
+    f1_score,
+    matthews_corrcoef,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
 
 # ---------------------------------------------------------------------------
