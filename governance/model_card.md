@@ -176,6 +176,8 @@ All pre-rebuild numbers (Phases 1-8) are superseded by the current dataset.
 
 7. **Temporal drift:** Code review practices, CI/CD tooling, and contributor behavior evolve. The model was trained on a 2-year window and may not capture recent shifts.
 
+8. **Line-level revert label (V8) rejected:** Evaluated tracking whether specific lines introduced by a commit are later modified by fix/bug/revert commits within 7 days. Near-zero positive rate (0-0.5% across all repos) — the intersection of exact line content matching and fix-commit overlap is vanishingly rare in practice. Commit metadata features remain the ceiling for what can be extracted without LLM-based code understanding.
+
 ## Version History
 
 | Version | Model Type | ROC-AUC | Training Data | Notes |
