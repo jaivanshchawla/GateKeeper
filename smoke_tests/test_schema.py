@@ -36,7 +36,7 @@ def test_predict_response_schema(api_url, safe_payload, wait_for_api):
 
 
 def test_predict_response_matches_score_label(api_url, safe_payload, wait_for_api):
-    """Validate that risk_label matches risk_score thresholds."""
+    """Validate that risk_label matches percentile-based score thresholds."""
     response = requests.post(f"{api_url}/predict", json=safe_payload)
 
     assert response.status_code == 200
@@ -45,12 +45,13 @@ def test_predict_response_matches_score_label(api_url, safe_payload, wait_for_ap
     score = data["risk_score"]
     label = data["risk_label"]
 
-    # Verify label matches score thresholds
-    if score < 0.3:
-        assert label == "low", f"Score {score} should map to 'low', got '{label}'"
-    elif score < 0.6:
+    # Global percentile thresholds from config.yaml
+    # high: >= 0.8619 (top 10%), medium: >= 0.7536 (next 15%), low: < 0.7536
+    if score >= 0.8619:
+        assert label == "high", f"Score {score} should map to 'high', got '{label}'"
+    elif score >= 0.7536:
         assert label == "medium", f"Score {score} should map to 'medium', got '{label}'"
     else:
-        assert label == "high", f"Score {score} should map to 'high', got '{label}'"
+        assert label == "low", f"Score {score} should map to 'low', got '{label}'"
 
     print(f"Score-label consistency passed: score={score:.4f}, label={label}")
