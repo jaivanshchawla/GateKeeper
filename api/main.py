@@ -51,6 +51,22 @@ class Features(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
     commit_msg_length: int = Field(..., ge=0, description="Commit message length in characters")
     is_fix_bug_revert: int = Field(..., ge=0, le=1, description="1 if commit contains fix/bug/revert keywords, 0 otherwise")
+    # L.1: File-level history
+    file_prior_changes_max: float = Field(0.0, ge=0)
+    file_prior_changes_mean: float = Field(0.0, ge=0)
+    file_prior_risky_max: float = Field(0.0, ge=0)
+    file_prior_risky_mean: float = Field(0.0, ge=0)
+    file_revert_count_max: float = Field(0.0, ge=0)
+    file_revert_count_mean: float = Field(0.0, ge=0)
+    file_age_days_max: float = Field(0.0, ge=0)
+    file_age_days_mean: float = Field(0.0, ge=0)
+    # L.3: Change-shape
+    churn_ratio: float = Field(0.0, ge=0)
+    change_entropy: float = Field(0.0, ge=0)
+    max_file_churn: float = Field(0.0, ge=0)
+    is_test_only: int = Field(0, ge=0, le=1)
+    test_to_code_ratio: float = Field(0.0, ge=0, le=1)
+    config_touch: int = Field(0, ge=0, le=1)
     
     class Config:
         extra = "allow"  # Allow extra fields (ignored) for backward compatibility
@@ -75,76 +91,62 @@ model = None
 
 
 def _load_model():
-    """Load the model from MLflow Model Registry or filesystem."""
+    """Load the model from the standalone .skops file.
+
+    In production (Docker), always load from models/gatekeeper_risk_model.skops.
+    For local dev with MLflow, try the registry first as a convenience.
+    """
     global model
 
-    # Set MLflow tracking URI
+    # Standalone model path (primary — works in Docker and local)
+    standalone_path = os.path.join(os.path.dirname(__file__), "..", "models", "gatekeeper_risk_model.skops")
+
+    # In Docker (no mlflow.db), load directly from standalone
+    mlflow_db = os.path.join(os.path.dirname(__file__), "..", "mlflow.db")
+    if not os.path.exists(mlflow_db) and os.path.exists(standalone_path):
+        try:
+            trusted_types = [
+                "collections.OrderedDict",
+                "lightgbm.basic.Booster",
+                "lightgbm.sklearn.LGBMClassifier",
+                "numpy.dtype",
+                "numpy.ndarray",
+                "pandas.core.frame.DataFrame",
+                "pandas.core.series.Series",
+            ]
+            model = sio.loads(open(standalone_path, "rb").read(), trusted=trusted_types)
+            print(f"Loaded standalone model: {type(model).__name__} ({model.n_features_in_} features)")
+            return
+        except Exception as e:
+            print(f"Standalone load failed: {e}")
+
+    # Local dev: try MLflow Model Registry first
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
     mlflow.set_tracking_uri(tracking_uri)
-    print(f"MLflow tracking URI: {tracking_uri}")
-
-    model_name = "GatekeeperRiskPredictor"
-
-    # Strategy 1: Try loading from Model Registry via models:/ URI
     try:
-        model_uri = f"models:/{model_name}/latest"
+        model_uri = "models:/GatekeeperRiskPredictor/latest"
         model = mlflow.pyfunc.load_model(model_uri)
-        print(f"Loaded model '{model_name}' from MLflow Model Registry")
+        print(f"Loaded model from MLflow Model Registry")
         return
     except Exception as e:
         print(f"Model Registry load failed: {e}")
 
-    # Strategy 2: Find model artifacts on filesystem and load directly with skops
-    # This handles cases where artifact URIs contain platform-specific absolute paths
-    try:
-        pattern = os.path.join(os.path.dirname(__file__), "..", "mlruns", "*", "models", "*", "artifacts", "model.skops")
-        skops_files = glob.glob(pattern)
-
-        if not skops_files:
-            raise FileNotFoundError("No model.skops files found in mlruns")
-
-        # Pick the most recently modified one (latest training run)
-        latest_file = max(skops_files, key=os.path.getmtime)
-        print(f"Loading model directly from: {latest_file}")
-
-        trusted_types = [
-            "collections.OrderedDict",
-            "lightgbm.basic.Booster",
-            "lightgbm.sklearn.LGBMClassifier",
-            "sklearn.ensemble._forest.RandomForestClassifier",
-            "sklearn.tree._classes.DecisionTreeClassifier",
-            "sklearn.utils._tags._TagsDict",
-            "numpy.dtype",
-            "numpy.ndarray",
-            "pandas.core.frame.DataFrame",
-            "pandas.core.series.Series",
-        ]
-        model = sio.loads(open(latest_file, "rb").read(), trusted=trusted_types)
-        print(f"Loaded model '{model_name}' via direct filesystem fallback")
-    except Exception as e2:
-        print(f"Strategy 2 failed: {e2}")
-
-    # Strategy 3: Load standalone model file (for Docker/GitHub Actions environments)
-    if model is None:
+    # Fallback: standalone file (even if mlflow.db exists)
+    if model is None and os.path.exists(standalone_path):
         try:
-            standalone_model_path = os.path.join(os.path.dirname(__file__), "..", "models", "gatekeeper_risk_model.skops")
-            if os.path.exists(standalone_model_path):
-                print(f"Loading standalone model from: {standalone_model_path}")
-                trusted_types = [
-                    "collections.OrderedDict",
-                    "lightgbm.basic.Booster",
-                    "lightgbm.sklearn.LGBMClassifier",
-                    "numpy.dtype",
-                    "numpy.ndarray",
-                    "pandas.core.frame.DataFrame",
-                    "pandas.core.series.Series",
-                ]
-                model = sio.loads(open(standalone_model_path, "rb").read(), trusted=trusted_types)
-                print(f"Loaded model '{model_name}' from standalone file")
-            else:
-                raise FileNotFoundError(f"Standalone model not found: {standalone_model_path}")
-        except Exception as e3:
-            print(f"FATAL: Could not load model from any source: {e3}")
+            trusted_types = [
+                "collections.OrderedDict",
+                "lightgbm.basic.Booster",
+                "lightgbm.sklearn.LGBMClassifier",
+                "numpy.dtype",
+                "numpy.ndarray",
+                "pandas.core.frame.DataFrame",
+                "pandas.core.series.Series",
+            ]
+            model = sio.loads(open(standalone_path, "rb").read(), trusted=trusted_types)
+            print(f"Loaded standalone model (fallback): {type(model).__name__}")
+        except Exception as e:
+            print(f"FATAL: Could not load model: {e}")
             model = None
 
 

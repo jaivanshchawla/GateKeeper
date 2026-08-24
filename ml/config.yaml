@@ -1,5 +1,5 @@
 # Feature columns for the ML model
-# Base features (9) + file history (L.1) + change-shape (L.3) = 22 features
+# 19 features: 9 base + 4 file history + 6 change-shape
 feature_columns:
   # Original 9 base features
   - lines_added
@@ -11,13 +11,9 @@ feature_columns:
   - day_of_week
   - commit_msg_length
   - is_fix_bug_revert
-  # L.1: File-level history (backward-looking)
+  # L.1: File-level history (backward-looking, no leakage)
   - file_prior_changes_max
   - file_prior_changes_mean
-  - file_prior_risky_max
-  - file_prior_risky_mean
-  - file_revert_count_max
-  - file_revert_count_mean
   - file_age_days_max
   - file_age_days_mean
   # L.3: Change-shape

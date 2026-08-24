@@ -36,6 +36,6 @@ def test_serving_determinism():
         "models/gatekeeper_risk_model.skops",
         trusted=sio.get_untrusted_types(file="models/gatekeeper_risk_model.skops"),
     )
-    test_input = np.array([[10, 5, 3, 2, 10, 14, 1, 50, 1]])
+    test_input = np.array([[10, 5, 3, 2, 10, 14, 1, 50, 1, 5, 3.0, 30, 20.0, 0.0, 1.0, 10.0, 0, 0.0, 0]])
     scores = [float(model.predict_proba(test_input)[0, 1]) for _ in range(10)]
     assert len(set(scores)) == 1, f"Non-deterministic serving: {scores}"

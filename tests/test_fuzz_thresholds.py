@@ -19,6 +19,12 @@ FEATURE_NAMES = [
     "lines_added", "lines_deleted", "files_touched", "dirs_touched",
     "author_prior_commits", "hour_of_day", "day_of_week",
     "commit_msg_length", "is_fix_bug_revert",
+    "file_prior_changes_max", "file_prior_changes_mean",
+    "file_prior_risky_max", "file_prior_risky_mean",
+    "file_revert_count_max", "file_revert_count_mean",
+    "file_age_days_max", "file_age_days_mean",
+    "churn_ratio", "change_entropy", "max_file_churn",
+    "is_test_only", "test_to_code_ratio", "config_touch",
 ]
 
 # Pydantic bounds from api/main.py
@@ -32,6 +38,20 @@ BOUNDS = {
     "day_of_week": (0, 6),
     "commit_msg_length": (0, None),
     "is_fix_bug_revert": (0, 1),
+    "file_prior_changes_max": (0, None),
+    "file_prior_changes_mean": (0, None),
+    "file_prior_risky_max": (0, None),
+    "file_prior_risky_mean": (0, None),
+    "file_revert_count_max": (0, None),
+    "file_revert_count_mean": (0, None),
+    "file_age_days_max": (0, None),
+    "file_age_days_mean": (0, None),
+    "churn_ratio": (0, None),
+    "change_entropy": (0, None),
+    "max_file_churn": (0, None),
+    "is_test_only": (0, 1),
+    "test_to_code_ratio": (0, 1),
+    "config_touch": (0, 1),
 }
 
 
@@ -48,6 +68,20 @@ def _make_valid():
             "day_of_week": random.randint(0, 6),
             "commit_msg_length": random.randint(5, 500),
             "is_fix_bug_revert": random.randint(0, 1),
+            "file_prior_changes_max": random.randint(0, 100),
+            "file_prior_changes_mean": round(random.uniform(0, 50), 2),
+            "file_prior_risky_max": random.randint(0, 30),
+            "file_prior_risky_mean": round(random.uniform(0, 15), 2),
+            "file_revert_count_max": random.randint(0, 5),
+            "file_revert_count_mean": round(random.uniform(0, 3), 2),
+            "file_age_days_max": random.randint(0, 500),
+            "file_age_days_mean": round(random.uniform(0, 250), 2),
+            "churn_ratio": round(random.uniform(0, 5), 2),
+            "change_entropy": round(random.uniform(0, 8), 2),
+            "max_file_churn": round(random.uniform(0, 500), 2),
+            "is_test_only": random.randint(0, 1),
+            "test_to_code_ratio": round(random.uniform(0, 1), 2),
+            "config_touch": random.randint(0, 1),
         }
     }
 

@@ -75,6 +75,7 @@ def compute_file_history(graph, commit_hash, commit_date, risky_hashes):
     files_touched = set()
     info = graph.get(commit_hash, {})
     if info:
+        files_touched = set(info.get("files", []))
 
     if not files_touched:
         return {

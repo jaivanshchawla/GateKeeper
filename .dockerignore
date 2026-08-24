@@ -1,0 +1,15 @@
+venv/
+mlruns/
+data/
+repos/
+*.db
+*.csv
+*.pyc
+__pycache__/
+.git/
+.github/
+.dvc/
+.gitignore
+.env
+*.md
+!api/requirements-slim.txt
