@@ -47,8 +47,8 @@ jobs:
             --config ml/config.yaml \
             2>&1 | tee /tmp/score_output.txt
           
-          # Extract the markdown content (between the === lines)
-          sed -n '/^## 🛡️/,/^\*Scored by/p' /tmp/score_output.txt > /tmp/pr_comment.md
+          # Extract the markdown content (between ## and *Scored by)
+          sed -n '/^## Gatekeeper/,/^\*Scored by/p' /tmp/score_output.txt > /tmp/pr_comment.md
           
           # If extraction failed, use the full output
           if [ ! -s /tmp/pr_comment.md ]; then
