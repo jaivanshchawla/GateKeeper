@@ -112,25 +112,27 @@ def register_model(
     except MlflowException as exc:
         print(f"No existing model registered: {exc}")
 
-    # Use cross-repo (LORO mean) F1 for promotion, not pooled-random.
+    # Use cross-repo (LORO mean) ROC-AUC for promotion.
     # This ensures we never mix evaluation protocols in a promotion decision.
-    new_f1 = new_metrics.get("f1", 0)
-    new_f1_cross = new_metrics.get("f1_cross_repo", new_f1)
-    current_f1 = current_metrics.get("f1", 0)
-    current_f1_cross = current_metrics.get("f1_cross_repo", current_f1)
-    should_promote = new_f1_cross > current_f1_cross if current_version else True
+    # ROC-AUC is the honest headline metric (F1 loses to constant baseline
+    # on 4/5 repos at these base rates).
+    new_roc = new_metrics.get("roc_auc", 0)
+    new_roc_cross = new_metrics.get("roc_auc_cross_repo", new_roc)
+    current_roc = current_metrics.get("roc_auc", 0)
+    current_roc_cross = current_metrics.get("roc_auc_cross_repo", current_roc)
+    should_promote = new_roc_cross > current_roc_cross if current_version else True
 
     print(f"\n{'=' * 60}")
     print("Model Promotion Decision:")
-    print(f"  New model F1 (pooled):    {new_f1:.4f}")
-    print(f"  New model F1 (cross-repo): {new_f1_cross:.4f}")
-    print(f"  Current F1 (pooled):      {current_f1:.4f}")
-    print(f"  Current F1 (cross-repo):  {current_f1_cross:.4f}")
+    print(f"  New model ROC-AUC (pooled):    {new_roc:.4f}")
+    print(f"  New model ROC-AUC (cross-repo): {new_roc_cross:.4f}")
+    print(f"  Current ROC-AUC (pooled):      {current_roc:.4f}")
+    print(f"  Current ROC-AUC (cross-repo):  {current_roc_cross:.4f}")
     print("  Eval protocol: cross_repo_loro")
     print(
         "  Decision: "
         + (
-            "PROMOTE (new model is better on cross-repo F1)"
+            "PROMOTE (new model is better on cross-repo ROC-AUC)"
             if should_promote
             else "KEEP current Production model"
         )
@@ -144,7 +146,7 @@ def register_model(
                 "source": "automl_pipeline",
                 "promoted": str(should_promote),
                 "eval_protocol": "cross_repo_loro",
-                "eval_comparison": "f1_cross_repo",
+                "eval_comparison": "roc_auc_cross_repo",
             }
         )
         if new_metrics:
@@ -189,7 +191,7 @@ def register_model(
     status = (
         f"Model registered. "
         f"{'Promoted to Production' if should_promote else 'Kept current model'}. "
-        f"New F1={new_f1:.4f}, Previous F1={current_f1:.4f}"
+        f"New ROC-AUC={new_roc:.4f}, Previous ROC-AUC={current_roc:.4f}"
     )
     if promoted_version is not None:
         status += f", Production version={promoted_version.version}"
