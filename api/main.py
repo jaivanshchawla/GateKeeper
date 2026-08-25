@@ -50,7 +50,7 @@ class Features(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
     commit_msg_length: int = Field(..., ge=0, description="Commit message length in characters")
     is_fix_bug_revert: int = Field(..., ge=0, le=1, description="1 if commit contains fix/bug/revert keywords, 0 otherwise")
-    # L.1: File-level history
+    # M.1a: File-level history
     file_prior_changes_max: float = Field(0.0, ge=0)
     file_prior_changes_mean: float = Field(0.0, ge=0)
     file_prior_risky_max: float = Field(0.0, ge=0)
@@ -59,13 +59,27 @@ class Features(BaseModel):
     file_revert_count_mean: float = Field(0.0, ge=0)
     file_age_days_max: float = Field(0.0, ge=0)
     file_age_days_mean: float = Field(0.0, ge=0)
-    # L.3: Change-shape
+    file_authors_count_max: float = Field(0.0, ge=0)
+    file_authors_count_mean: float = Field(0.0, ge=0)
+    days_since_last_change_max: float = Field(0.0, ge=0)
+    days_since_last_change_mean: float = Field(0.0, ge=0)
+    # M.1b: Author-file familiarity
+    author_file_prior_commits_max: float = Field(0.0, ge=0)
+    author_file_prior_commits_mean: float = Field(0.0, ge=0)
+    author_dir_prior_commits_max: float = Field(0.0, ge=0)
+    author_dir_prior_commits_mean: float = Field(0.0, ge=0)
+    is_author_first_touch_file: int = Field(0, ge=0, le=1)
+    is_author_first_touch_dir: int = Field(0, ge=0, le=1)
+    author_days_since_last_commit: float = Field(0.0, ge=0)
+    # M.1c: Change-shape
     churn_ratio: float = Field(0.0, ge=0)
     change_entropy: float = Field(0.0, ge=0)
     max_file_churn: float = Field(0.0, ge=0)
     is_test_only: int = Field(0, ge=0, le=1)
     test_to_code_ratio: float = Field(0.0, ge=0, le=1)
     config_touch: int = Field(0, ge=0, le=1)
+    is_merge: int = Field(0, ge=0, le=1)
+    files_per_dir_ratio: float = Field(0.0, ge=0)
     
     class Config:
         extra = "allow"  # Allow extra fields (ignored) for backward compatibility

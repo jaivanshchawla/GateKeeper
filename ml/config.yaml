@@ -11,18 +11,36 @@ feature_columns:
   - day_of_week
   - commit_msg_length
   - is_fix_bug_revert
-  # L.1: File-level history (backward-looking, no leakage)
+  # M.1a: File-level history (backward-looking, no leakage)
   - file_prior_changes_max
   - file_prior_changes_mean
+  - file_prior_risky_max
+  - file_prior_risky_mean
+  - file_revert_count_max
+  - file_revert_count_mean
   - file_age_days_max
   - file_age_days_mean
-  # L.3: Change-shape
+  - file_authors_count_max
+  - file_authors_count_mean
+  - days_since_last_change_max
+  - days_since_last_change_mean
+  # M.1b: Author-file familiarity
+  - author_file_prior_commits_max
+  - author_file_prior_commits_mean
+  - author_dir_prior_commits_max
+  - author_dir_prior_commits_mean
+  - is_author_first_touch_file
+  - is_author_first_touch_dir
+  - author_days_since_last_commit
+  # M.1c: Change-shape
   - churn_ratio
   - change_entropy
   - max_file_churn
   - is_test_only
   - test_to_code_ratio
   - config_touch
+  - is_merge
+  - files_per_dir_ratio
 
 # LightGBM hyperparameters
 lightgbm_params:

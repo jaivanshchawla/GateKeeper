@@ -30,6 +30,7 @@ TRUSTED_TYPES = [
 
 # Human-readable feature descriptions
 FEATURE_DESCRIPTIONS = {
+    # Base features
     "lines_added": "lines added",
     "lines_deleted": "lines deleted",
     "files_touched": "files touched",
@@ -39,6 +40,7 @@ FEATURE_DESCRIPTIONS = {
     "day_of_week": "day of week",
     "commit_msg_length": "commit message length",
     "is_fix_bug_revert": "fix/bug/revert keywords",
+    # M.1a: File history
     "file_prior_changes_max": "max file change count",
     "file_prior_changes_mean": "avg file change count",
     "file_prior_risky_max": "max prior risky changes to touched files",
@@ -47,12 +49,27 @@ FEATURE_DESCRIPTIONS = {
     "file_revert_count_mean": "avg revert count for touched files",
     "file_age_days_max": "oldest touched file age (days)",
     "file_age_days_mean": "avg touched file age (days)",
+    "file_authors_count_max": "max distinct authors on touched files",
+    "file_authors_count_mean": "avg distinct authors on touched files",
+    "days_since_last_change_max": "max days since touched file last changed",
+    "days_since_last_change_mean": "avg days since touched files last changed",
+    # M.1b: Author-file familiarity
+    "author_file_prior_commits_max": "author's prior commits to these files",
+    "author_file_prior_commits_mean": "author's avg prior commits to these files",
+    "author_dir_prior_commits_max": "author's prior commits to these directories",
+    "author_dir_prior_commits_mean": "author's avg prior commits to these dirs",
+    "is_author_first_touch_file": "first time author touches these files",
+    "is_author_first_touch_dir": "first time author touches these directories",
+    "author_days_since_last_commit": "days since author's last commit",
+    # M.1c: Change shape
     "churn_ratio": "churn ratio (deleted/added)",
     "change_entropy": "change spread across files",
     "max_file_churn": "largest single-file change",
     "is_test_only": "test-only change",
     "test_to_code_ratio": "test-to-code ratio",
     "config_touch": "touches config/CI files",
+    "is_merge": "merge commit",
+    "files_per_dir_ratio": "files per directory",
 }
 
 # Singleton: explainer and feature names cached at module load
