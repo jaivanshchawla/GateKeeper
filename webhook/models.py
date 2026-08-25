@@ -62,6 +62,66 @@ class Issue(Base):
         }
 
 
+class Repo(Base):
+    """Repository model for per-repo dashboard."""
+    __tablename__ = "repos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    remote_url = Column(String(500), nullable=True)
+    default_branch = Column(String(100), nullable=False, default="main")
+    registered_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "remote_url": self.remote_url,
+            "default_branch": self.default_branch,
+            "registered_at": self.registered_at.isoformat() if self.registered_at else None,
+        }
+
+
+class Commit(Base):
+    """Commit model for tracking scored commits per repo."""
+    __tablename__ = "commits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    repo_id = Column(Integer, nullable=False, index=True)
+    sha = Column(String(40), nullable=False)
+    author = Column(String(255), nullable=True)
+    timestamp = Column(DateTime, nullable=True)
+    score = Column(Integer, nullable=True)  # 0-100 scaled
+    band = Column(String(10), nullable=True)  # low/medium/high
+    risk_label = Column(String(10), nullable=True)
+    rule_results = Column(Text, nullable=True)  # JSON
+    shap_top3 = Column(Text, nullable=True)  # JSON
+    message = Column(Text, nullable=True)
+    files_touched = Column(Text, nullable=True)  # JSON list
+    lines_added = Column(Integer, nullable=True)
+    lines_deleted = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "repo_id": self.repo_id,
+            "sha": self.sha,
+            "author": self.author,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "score": self.score,
+            "band": self.band,
+            "risk_label": self.risk_label,
+            "rule_results": self.rule_results,
+            "shap_top3": self.shap_top3,
+            "message": self.message,
+            "files_touched": self.files_touched,
+            "lines_added": self.lines_added,
+            "lines_deleted": self.lines_deleted,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 def init_db():
     """Initialize database and create tables."""
     Base.metadata.create_all(bind=engine)
