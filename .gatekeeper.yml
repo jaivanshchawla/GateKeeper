@@ -1,0 +1,49 @@
+# Gatekeeper Configuration
+# Override per-repo by placing .gatekeeper.yml in your repo root.
+# See docs for each rule's options.
+
+rules:
+  large_change:
+    max_lines: 500
+    severity: warn
+
+  too_many_files:
+    max_files: 20
+    severity: warn
+
+  no_tests:
+    severity: warn
+    exempt_paths:
+      - "docs/**"
+      - "*.md"
+      - "*.rst"
+
+  config_and_code:
+    severity: warn
+
+  revert_hotspot:
+    revert_count: 3
+    window_days: 60
+    severity: block
+
+  first_touch:
+    severity: info
+
+  weekend_deploy:
+    severity: info
+
+  stale_file:
+    days: 180
+    severity: info
+
+  direct_to_main:
+    severity: warn
+
+ml_scoring:
+  enabled: true
+  band_thresholds:
+    high: 0.90
+    medium: 0.75
+
+fail_on:
+  - block
