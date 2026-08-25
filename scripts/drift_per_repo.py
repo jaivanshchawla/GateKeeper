@@ -17,8 +17,17 @@ import pandas as pd
 
 
 def run_drift_per_repo(csv_path: str = "data/commit_features.csv",
-                       output_path: str = "data/drift_results.json"):
-    """Run per-repo drift detection and save results."""
+                       output_path: str = "data/drift_results.json",
+                       retrain_threshold: float = 0.5):
+    """Run per-repo drift detection and save results.
+
+    Args:
+        csv_path: Path to commit features CSV
+        output_path: Path to save drift results JSON
+        retrain_threshold: Fraction of repos that must show drift before
+            flagging needs_retraining. Default 0.5 (50% of repos).
+            E.g. 0.5 on a 5-repo set = flag when 3+ repos drift.
+    """
     from evidently.legacy.metric_preset import DataDriftPreset
     from evidently.legacy.report import Report
 
@@ -93,10 +102,12 @@ def run_drift_per_repo(csv_path: str = "data/commit_features.csv",
     # Overall status
     all_drifted = [r for r in results["repos"].values()
                    if r.get("status") == "ok" and r.get("dataset_drift")]
+    total_repos = len([r for r in results["repos"].values() if r.get("status") == "ok"])
     results["summary"] = {
-        "repos_analyzed": len([r for r in results["repos"].values() if r.get("status") == "ok"]),
+        "repos_analyzed": total_repos,
         "repos_with_drift": len(all_drifted),
-        "needs_retraining": len(all_drifted) >= 3,  # flag if 3+ repos drift
+        "needs_retraining": len(all_drifted) >= total_repos * retrain_threshold,
+        "retrain_threshold": retrain_threshold,
     }
 
     with open(output_path, "w") as f:
