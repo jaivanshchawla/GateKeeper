@@ -36,10 +36,10 @@ def test_serving_determinism():
         "models/gatekeeper_risk_model.skops",
         trusted=sio.get_untrusted_types(file="models/gatekeeper_risk_model.skops"),
     )
-    # 36 features matching ml/config.yaml
+    # 35 features matching ml/config.yaml (is_author_first_touch_file removed)
     test_input = np.array([[10, 5, 3, 2, 10, 14, 1, 50, 1,  # base
                             5, 3.0, 0, 0.0, 0, 0.0, 30, 20.0, 5, 3.0, 10, 5.0,  # file history
-                            3, 1.5, 10, 5.0, 0, 0, 5,  # author-file
+                            3, 1.5, 10, 5.0, 0, 5,  # author-file (no first_touch_file)
                             0.5, 1.0, 7.5, 0, 0.0, 0, 0, 2.0]])  # change-shape
     scores = [float(model.predict_proba(test_input)[0, 1]) for _ in range(10)]
     assert len(set(scores)) == 1, f"Non-deterministic serving: {scores}"

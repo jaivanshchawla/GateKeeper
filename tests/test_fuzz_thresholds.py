@@ -23,11 +23,17 @@ FEATURE_NAMES = [
     "file_prior_risky_max", "file_prior_risky_mean",
     "file_revert_count_max", "file_revert_count_mean",
     "file_age_days_max", "file_age_days_mean",
+    "file_authors_count_max", "file_authors_count_mean",
+    "days_since_last_change_max", "days_since_last_change_mean",
+    "author_file_prior_commits_max", "author_file_prior_commits_mean",
+    "author_dir_prior_commits_max", "author_dir_prior_commits_mean",
+    "is_author_first_touch_dir",
+    "author_days_since_last_commit",
     "churn_ratio", "change_entropy", "max_file_churn",
     "is_test_only", "test_to_code_ratio", "config_touch",
+    "is_merge", "files_per_dir_ratio",
 ]
 
-# Pydantic bounds from api/main.py
 BOUNDS = {
     "lines_added": (0, None),
     "lines_deleted": (0, None),
@@ -46,12 +52,24 @@ BOUNDS = {
     "file_revert_count_mean": (0, None),
     "file_age_days_max": (0, None),
     "file_age_days_mean": (0, None),
+    "file_authors_count_max": (0, None),
+    "file_authors_count_mean": (0, None),
+    "days_since_last_change_max": (0, None),
+    "days_since_last_change_mean": (0, None),
+    "author_file_prior_commits_max": (0, None),
+    "author_file_prior_commits_mean": (0, None),
+    "author_dir_prior_commits_max": (0, None),
+    "author_dir_prior_commits_mean": (0, None),
+    "is_author_first_touch_dir": (0, 1),
+    "author_days_since_last_commit": (0, None),
     "churn_ratio": (0, None),
     "change_entropy": (0, None),
     "max_file_churn": (0, None),
     "is_test_only": (0, 1),
     "test_to_code_ratio": (0, 1),
     "config_touch": (0, 1),
+    "is_merge": (0, 1),
+    "files_per_dir_ratio": (0, None),
 }
 
 
@@ -76,12 +94,24 @@ def _make_valid():
             "file_revert_count_mean": round(random.uniform(0, 3), 2),
             "file_age_days_max": random.randint(0, 500),
             "file_age_days_mean": round(random.uniform(0, 250), 2),
+            "file_authors_count_max": random.randint(0, 100),
+            "file_authors_count_mean": round(random.uniform(0, 50), 2),
+            "days_since_last_change_max": random.randint(0, 500),
+            "days_since_last_change_mean": round(random.uniform(0, 250), 2),
+            "author_file_prior_commits_max": random.randint(0, 50),
+            "author_file_prior_commits_mean": round(random.uniform(0, 25), 2),
+            "author_dir_prior_commits_max": random.randint(0, 100),
+            "author_dir_prior_commits_mean": round(random.uniform(0, 50), 2),
+            "is_author_first_touch_dir": random.randint(0, 1),
+            "author_days_since_last_commit": random.randint(0, 500),
             "churn_ratio": round(random.uniform(0, 5), 2),
             "change_entropy": round(random.uniform(0, 8), 2),
             "max_file_churn": round(random.uniform(0, 500), 2),
             "is_test_only": random.randint(0, 1),
             "test_to_code_ratio": round(random.uniform(0, 1), 2),
             "config_touch": random.randint(0, 1),
+            "is_merge": random.randint(0, 1),
+            "files_per_dir_ratio": round(random.uniform(0.5, 5), 2),
         }
     }
 
@@ -135,8 +165,6 @@ def test_threshold_boundaries():
         (0.6001, "high"),
     ]
 
-    # We can't directly control the model's output, but we can test the
-    # label assignment logic directly
     def get_risk_label(score):
         if score < 0.3:
             return "low"

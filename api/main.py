@@ -68,7 +68,6 @@ class Features(BaseModel):
     author_file_prior_commits_mean: float = Field(0.0, ge=0)
     author_dir_prior_commits_max: float = Field(0.0, ge=0)
     author_dir_prior_commits_mean: float = Field(0.0, ge=0)
-    is_author_first_touch_file: int = Field(0, ge=0, le=1)
     is_author_first_touch_dir: int = Field(0, ge=0, le=1)
     author_days_since_last_commit: float = Field(0.0, ge=0)
     # M.1c: Change-shape

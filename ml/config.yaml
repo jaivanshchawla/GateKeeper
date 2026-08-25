@@ -29,7 +29,6 @@ feature_columns:
   - author_file_prior_commits_mean
   - author_dir_prior_commits_max
   - author_dir_prior_commits_mean
-  - is_author_first_touch_file
   - is_author_first_touch_dir
   - author_days_since_last_commit
   # M.1c: Change-shape
