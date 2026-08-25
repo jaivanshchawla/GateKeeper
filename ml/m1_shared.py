@@ -138,7 +138,8 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
 
 def walk_graph_to_state(graph: dict, risky_hashes: set[str],
                         stop_hash: str | None = None,
-                        stop_date: datetime | None = None):
+                        stop_date: datetime | None = None,
+                        sorted_graph: list | None = None):
     """Walk graph chronologically, building running state.
 
     Stops BEFORE stop_hash (exclusive) or before stop_date (exclusive).
@@ -146,8 +147,13 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
 
     This is the SAME state-building logic used by m1_compute_features.py's
     compute_features_incremental, extracted for reuse by both paths.
+
+    Args:
+        sorted_graph: Optional pre-sorted list of (hash, info) tuples.
+            If provided, skips the O(n log n) sort on every call.
     """
-    sorted_graph = sorted(graph.items(), key=lambda x: x[1]["date"])
+    if sorted_graph is None:
+        sorted_graph = sorted(graph.items(), key=lambda x: x[1]["date"])
 
     # Running state — same variables as compute_features_incremental
     file_change_count: dict[str, int] = defaultdict(int)
