@@ -131,87 +131,31 @@ def compute_features_incremental(repo_name: str, df: pd.DataFrame, graph: dict) 
             author = row.get("author", "")
             files_touched = files_in_this
             is_merge = 1 if v.get("is_merge", False) else 0
-            n_files = len(files_touched)
 
-            dirs = set()
-            for fp in files_touched:
-                d = str(Path(fp).parent)
-                if d and d != ".":
-                    dirs.add(d)
-            n_dirs = max(len(dirs), 1)
+            # Build state dict from running variables
+            state = {
+                "file_change_count": file_change_count,
+                "file_risky_count": file_risky_count,
+                "file_revert_count": file_revert_count,
+                "file_first_seen": file_first_seen,
+                "file_last_touch_hash": file_last_touch_hash,
+                "file_authors": file_authors,
+                "author_state": author_state,
+                "co_change": co_change,
+            }
 
-            # M.1a: File history
-            ch_vals = [file_change_count[f] for f in files_touched] if files_touched else [0]
-            rk_vals = [file_risky_count[f] for f in files_touched] if files_touched else [0]
-            rv_vals = [file_revert_count[f] for f in files_touched] if files_touched else [0]
-            ag_vals = [(cd - file_first_seen[f]).days for f in files_touched if f in file_first_seen]
-            au_vals = [len(file_authors[f]) for f in files_touched] if files_touched else [0]
-
-            def mm(vals):
-                return (max(vals), float(np.mean(vals))) if vals else (0, 0.0)
-
-            fpc = mm(ch_vals)
-            fpr = mm(rk_vals)
-            frc = mm(rv_vals)
-            fad = mm(ag_vals)
-            fac = mm(au_vals)
-
-            # M.1a: days_since_last_change
-            fld = []
-            for fp in files_touched:
-                lth = file_last_touch_hash.get(fp)
-                if lth and lth != h and lth in graph:
-                    fld.append((cd - graph[lth]["date"]).days)
-                else:
-                    fld.append(9999)
-
-            # M.1b: Author-file familiarity
-            af = author_state[author]
-            afc = []
-            adc = []
-            fft_f = 1
-            fft_d = 1
-            for fp in files_touched:
-                c = af["files"][fp]
-                afc.append(c)
-                if c > 0:
-                    fft_f = 0
-                d = str(Path(fp).parent)
-                if d and d != ".":
-                    dc = af["dirs"][d]
-                    adc.append(dc)
-                    if dc > 0:
-                        fft_d = 0
-            adl = max(0, (cd - af["last_date"]).days) if af["last_date"] else 9999
-
-            # M.1d: Co-change
-            fl = sorted(files_touched)
-            co = []
-            if 2 <= len(fl) <= 30:
-                for i in range(len(fl)):
-                    for j in range(i + 1, len(fl)):
-                        co.append(co_change.get((fl[i], fl[j]), 0))
-
-            results.append({
-                "file_prior_changes_max": fpc[0], "file_prior_changes_mean": fpc[1],
-                "file_prior_risky_max": fpr[0], "file_prior_risky_mean": fpr[1],
-                "file_revert_count_max": frc[0], "file_revert_count_mean": frc[1],
-                "file_age_days_max": fad[0], "file_age_days_mean": fad[1],
-                "file_authors_count_max": fac[0], "file_authors_count_mean": fac[1],
-                "days_since_last_change_max": max(fld) if fld else 0,
-                "days_since_last_change_mean": float(np.mean(fld)) if fld else 0.0,
-                "author_file_prior_commits_max": max(afc) if afc else 0,
-                "author_file_prior_commits_mean": float(np.mean(afc)) if afc else 0.0,
-                "author_dir_prior_commits_max": max(adc) if adc else 0,
-                "author_dir_prior_commits_mean": float(np.mean(adc)) if adc else 0.0,
-                "is_author_first_touch_file": fft_f,
-                "is_author_first_touch_dir": fft_d,
-                "author_days_since_last_commit": adl,
-                "is_merge": is_merge,
-                "files_per_dir_ratio": n_files / n_dirs if n_dirs > 0 else 0,
-                "co_change_strength_max": max(co) if co else 0,
-                "co_change_strength_mean": float(np.mean(co)) if co else 0.0,
-            })
+            # Call shared function — SAME code path as single-commit extraction
+            from ml.m1_shared import compute_m1_features
+            features = compute_m1_features(
+                state=state, graph=graph, target_hash=h,
+                target_date=cd, author=author,
+                files_touched=files_touched, is_merge=is_merge,
+                risky_hashes=risky_hashes,
+            )
+            # Remove co-change (not in current config)
+            features.pop("co_change_strength_max", None)
+            features.pop("co_change_strength_mean", None)
+            results.append(features)
 
         # ── Update running state for ALL commits (needed for file tracking) ──
         for fp in files_in_this:

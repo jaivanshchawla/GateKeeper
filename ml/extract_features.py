@@ -206,6 +206,9 @@ class CommitFeatureExtractor:
         """
         Extract features for a single specified commit.
 
+        Uses ml/m1_shared.py — the SAME functions as bulk extraction.
+        No divergent implementations.
+
         Args:
             repo_path: Path to the cloned git repository
             commit_hash: The hash of the commit to extract features for
@@ -213,29 +216,32 @@ class CommitFeatureExtractor:
         Returns:
             Dictionary with feature values for the commit
         """
-        # Seed author_prior_counts from FULL repo history (matching bulk extraction).
-        # Bulk extraction seeds from the full repo history before the training window,
-        # then increments as it processes commits in the window.
-        if not self.author_prior_counts:
-            try:
-                import subprocess as _sp
-                result = _sp.run(
-                    ["git", "log", "--pretty=format:%an", "--no-merges", "HEAD"],
-                    cwd=repo_path, capture_output=True, timeout=60,
-                    encoding="utf-8", errors="replace",
-                )
-                for name in result.stdout.strip().split("\n"):
-                    name = name.strip()
-                    if name:
-                        self.author_prior_counts[name] += 1
-            except Exception:
-                pass
+        import subprocess as _sp
+        from datetime import timezone as _tz
 
-        # Use PyDriller to get the specific commit
+        # Step 1: Get commit date via git log (fast, no PyDriller needed)
+        result = _sp.run(
+            ["git", "log", "-1", "--format=%ct", commit_hash],
+            cwd=repo_path, capture_output=True, timeout=30,
+            encoding="utf-8", errors="replace",
+        )
+        commit_ts = int(result.stdout.strip())
+        commit_dt = datetime.fromtimestamp(commit_ts, tz=_tz.utc).replace(tzinfo=None)
+        commit_date_str = commit_dt.strftime("%Y-%m-%d")
+
+        # Step 2: Seed author_prior_counts BEFORE commit_date
+        # Bulk: count_authors_before(rp, WINDOW_START) + increment in window
+        #   = count_authors_before(rp, commit_date)  (same thing)
+        # SC must compute the same value.
+        if not self.author_prior_counts:
+            from ml.m1_shared import count_authors_before
+            self.author_prior_counts = count_authors_before(repo_path, commit_date_str)
+
+        # Step 3: Use PyDriller to get the specific commit (for base features)
         repository = Repository(repo_path, single=commit_hash)
 
         for commit in repository.traverse_commits():
-            # Extract features using the existing method
+            # Extract features using the shared method
             features = self._extract_features_from_commit(commit)
             # Remove commit_msg as it's not used in training
             features.pop('commit_msg', None)
@@ -243,40 +249,34 @@ class CommitFeatureExtractor:
             features['commit_message'] = commit.msg or ''
             features['commit_timestamp'] = commit.committer_date.timestamp() if hasattr(commit.committer_date, 'timestamp') else 0
             try:
-                # Use new_path for full path (not filename which is basename only)
-                # Normalize to forward slashes for cross-platform consistency with git log
-                features['touched_files'] = ",".join([
-                    getattr(m, 'new_path', getattr(m, 'filename', str(m))).replace('\\', '/')
+                # Use new_path for full path, normalize to forward slashes
+                # Use PIPE separator to match CSV format (rebuild_b2.py uses "|")
+                features['touched_files'] = "|".join(sorted([
+                    (getattr(m, 'new_path', getattr(m, 'filename', str(m))) or '').replace('\\', '/')
                     for m in commit.modified_files
-                ]) if commit.modified_files else ""
+                    if getattr(m, 'new_path', getattr(m, 'filename', None))
+                ])) if commit.modified_files else ""
             except Exception:
                 features['touched_files'] = ""
 
-            # Compute M.1 features using single-pass index
+            # Step 4: Compute M.1 features using ml/m1_shared.py
+            # ONE code path — same function as bulk extraction
             try:
-                from ml.single_commit_features import compute_single_commit_m1_features, build_file_index
-                from datetime import datetime as _dt, timezone as _tz
+                from ml.single_commit_features import compute_single_commit_m1_features
                 commit_date = commit.committer_date
                 if commit_date.tzinfo is not None:
                     commit_date = commit_date.astimezone(_tz.utc)
-                touched = set(features['touched_files'].split(",")) if features.get('touched_files') else set()
-
-                # Build single-pass file index (one git log call)
-                since_str = self.since or '2020-01-01'
-                before_str = commit_date.strftime('%Y-%m-%dT%H:%M:%S')
-                file_index = build_file_index(repo_path, since_str, before_str)
+                touched = set(features['touched_files'].split("|")) if features.get('touched_files') else set()
 
                 m1 = compute_single_commit_m1_features(
                     repo_path=repo_path,
+                    commit_hash=commit_hash,
                     commit_date=commit_date,
                     author_name=features.get('author', ''),
                     touched_files=touched,
                     lines_added=features.get('lines_added', 0),
                     lines_deleted=features.get('lines_deleted', 0),
-                    dirs_touched=features.get('dirs_touched', 0),
                     since_date=self.since,
-                    risky_hashes=None,  # let compute_risky_hashes derive from index
-                    file_index=file_index,
                 )
                 features.update(m1)
             except Exception as e:

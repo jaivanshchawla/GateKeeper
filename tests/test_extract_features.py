@@ -357,9 +357,44 @@ class TestCommitFeatureExtractor:
             msg="Update implementation",
         )
 
-        # Mock the Repository class to return our commit
+        # Mock subprocess.run calls (git log for commit date + author counts)
         from unittest import mock
-        with mock.patch("ml.extract_features.Repository") as MockRepo:
+        import subprocess
+
+        def mock_subprocess_run(cmd, **kwargs):
+            # git log -1 --format=%ct <hash> -> return commit timestamp
+            if "--format=%ct" in " ".join(cmd):
+                result = mock.MagicMock()
+                result.stdout = "1700000000"
+                result.returncode = 0
+                return result
+            # git log --until=<date> --format=%aN -> return author counts
+            if "--format=%aN" in " ".join(cmd):
+                result = mock.MagicMock()
+                result.stdout = "Tester\nTester\nOther"
+                result.returncode = 0
+                return result
+            # git log --name-only -> return file paths for graph
+            if "--name-only" in cmd:
+                result = mock.MagicMock()
+                result.stdout = "deadbeef123|1700000000|Tester|Update implementation\nsrc/file1.py\nsrc/file2.py\n"
+                result.returncode = 0
+                return result
+            # git log --merges -> empty
+            if "--merges" in cmd:
+                result = mock.MagicMock()
+                result.stdout = ""
+                result.returncode = 0
+                return result
+            # Default
+            result = mock.MagicMock()
+            result.stdout = ""
+            result.returncode = 0
+            return result
+
+        with mock.patch("ml.extract_features.Repository") as MockRepo, \
+             mock.patch("subprocess.run", side_effect=mock_subprocess_run), \
+             mock.patch("ml.m1_shared.subprocess.run", side_effect=mock_subprocess_run):
             mock_instance = MockRepo.return_value
             mock_instance.traverse_commits.return_value = [mock_commit]
 
