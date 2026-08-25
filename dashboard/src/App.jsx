@@ -415,8 +415,62 @@ function IssuesView() {
 
 // ── Main App ─────────────────────────────────────────────────────────
 
+function DriftView() {
+  const [drift, setDrift] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api('/drift').then(setDrift).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="loading">Loading drift data...</div>
+  if (!drift) return <div className="card"><h2>No drift data</h2><p>Run <code>scripts/drift_per_repo.py</code> first.</p></div>
+
+  const repos = drift.repos || {}
+  const summary = drift.summary || {}
+
+  return (
+    <div>
+      <h1>📊 Drift Monitoring</h1>
+      <p className="repo-detail-url">Generated: {drift.generated_at?.slice(0, 19)}</p>
+      <div className="stats-grid">
+        <div className="stat-card"><h3>{summary.repos_analyzed || 0}</h3><p>Repos Analyzed</p></div>
+        <div className="stat-card open"><h3>{summary.repos_with_drift || 0}</h3><p>With Drift</p></div>
+        <div className="stat-card resolved"><h3>{summary.needs_retraining ? 'YES' : 'NO'}</h3><p>Needs Retrain</p></div>
+      </div>
+      <div className="card">
+        <h2>Per-Repo Drift Status</h2>
+        <table>
+          <thead><tr><th>Repo</th><th>Reference</th><th>Current</th><th>Drift?</th><th>Drift Share</th><th>Drifted Features</th></tr></thead>
+          <tbody>
+            {Object.entries(repos).map(([name, r]) => (
+              <tr key={name}>
+                <td><strong>{name}</strong></td>
+                <td>{r.reference_rows}</td>
+                <td>{r.current_rows}</td>
+                <td><span className={`status-badge ${r.dataset_drift ? 'high' : 'low'}`}>{r.dataset_drift ? 'DRIFT' : 'OK'}</span></td>
+                <td>{r.drift_share != null ? (r.drift_share * 100).toFixed(1) + '%' : '-'}</td>
+                <td>{r.drifted_count != null ? `${r.drifted_count}/${r.total_features}` : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Show drifted features per repo */}
+      {Object.entries(repos).filter(([, r]) => r.drifted_features?.length > 0).map(([name, r]) => (
+        <div key={name} className="card">
+          <h2>⚠️ {name}: Drifted Features</h2>
+          <ul className="file-list">
+            {r.drifted_features.map((f, i) => <li key={i}><code>{f}</code></li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function App() {
-  const [view, setView] = useState('repos')  // repos | repo-detail | commit-detail | issues
+  const [view, setView] = useState('repos')
   const [selectedRepo, setSelectedRepo] = useState(null)
   const [selectedCommit, setSelectedCommit] = useState(null)
 
@@ -424,6 +478,7 @@ function App() {
     <div>
       <nav className="top-nav">
         <button className={view === 'repos' ? 'active' : ''} onClick={() => setView('repos')}>Repos</button>
+        <button className={view === 'drift' ? 'active' : ''} onClick={() => setView('drift')}>Drift</button>
         <button className={view === 'issues' ? 'active' : ''} onClick={() => setView('issues')}>Issues</button>
       </nav>
 
@@ -440,6 +495,7 @@ function App() {
       {view === 'commit-detail' && (
         <CommitDetail commitId={selectedCommit} onBack={() => setView('repo-detail')} />
       )}
+      {view === 'drift' && <DriftView />}
       {view === 'issues' && <IssuesView />}
     </div>
   )

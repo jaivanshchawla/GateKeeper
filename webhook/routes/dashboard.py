@@ -413,3 +413,22 @@ def get_commit(commit_id):
         return jsonify(result), 200
     finally:
         db.close()
+
+
+# ── Drift monitoring endpoints ────────────────────────────────────────
+
+@dashboard_bp.route("/drift", methods=["GET"])
+def get_drift():
+    """Get per-repo drift status from the latest drift analysis."""
+    # Search for drift_results.json in common locations
+    base = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base, "..", "..", "data", "drift_results.json"),
+        os.path.join(base, "..", "..", "..", "data", "drift_results.json"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p) as f:
+                return jsonify(json.load(f)), 200
+    return jsonify({"error": "No drift results available. Run scripts/drift_per_repo.py first."}), 404
+

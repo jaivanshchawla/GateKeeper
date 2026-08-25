@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-08-25T10:15:15.788269",
+  "repos": {
+    "django": {
+      "status": "ok",
+      "reference_rows": 1600,
+      "current_rows": 400,
+      "dataset_drift": true,
+      "drift_share": 0.5,
+      "drifted_features": [],
+      "drifted_count": 0,
+      "total_features": 48,
+      "report_html": "data\\drift_report_django.html"
+    },
+    "kafka": {
+      "status": "ok",
+      "reference_rows": 1600,
+      "current_rows": 400,
+      "dataset_drift": true,
+      "drift_share": 0.5,
+      "drifted_features": [],
+      "drifted_count": 0,
+      "total_features": 48,
+      "report_html": "data\\drift_report_kafka.html"
+    },
+    "kubernetes": {
+      "status": "ok",
+      "reference_rows": 1600,
+      "current_rows": 400,
+      "dataset_drift": true,
+      "drift_share": 0.5,
+      "drifted_features": [],
+      "drifted_count": 0,
+      "total_features": 48,
+      "report_html": "data\\drift_report_kubernetes.html"
+    },
+    "react": {
+      "status": "ok",
+      "reference_rows": 1600,
+      "current_rows": 400,
+      "dataset_drift": true,
+      "drift_share": 0.5,
+      "drifted_features": [],
+      "drifted_count": 0,
+      "total_features": 48,
+      "report_html": "data\\drift_report_react.html"
+    },
+    "rust": {
+      "status": "ok",
+      "reference_rows": 1600,
+      "current_rows": 400,
+      "dataset_drift": true,
+      "drift_share": 0.5,
+      "drifted_features": [],
+      "drifted_count": 0,
+      "total_features": 48,
+      "report_html": "data\\drift_report_rust.html"
+    }
+  },
+  "summary": {
+    "repos_analyzed": 5,
+    "repos_with_drift": 5,
+    "needs_retraining": true
+  }
+}
