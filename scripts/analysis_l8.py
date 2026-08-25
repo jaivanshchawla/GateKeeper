@@ -14,7 +14,6 @@ Does NOT use is_fix_bug_revert as a feature (that's V4 leakage).
 import os
 import re
 import subprocess
-import sys
 import time
 from collections import defaultdict
 
