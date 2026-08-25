@@ -250,13 +250,20 @@ class CommitFeatureExtractor:
             except Exception:
                 features['touched_files'] = ""
 
-            # Compute M.1 features (file history, author-file, change-shape)
+            # Compute M.1 features using single-pass index
             try:
-                from ml.single_commit_features import compute_single_commit_m1_features
+                from ml.single_commit_features import compute_single_commit_m1_features, build_file_index
+                from datetime import datetime as _dt, timezone as _tz
                 commit_date = commit.committer_date
                 if commit_date.tzinfo is not None:
-                    commit_date = commit_date.astimezone(__import__('datetime').timezone.utc)
+                    commit_date = commit_date.astimezone(_tz.utc)
                 touched = set(features['touched_files'].split(",")) if features.get('touched_files') else set()
+
+                # Build single-pass file index (one git log call)
+                since_str = self.since or '2020-01-01'
+                before_str = commit_date.strftime('%Y-%m-%dT%H:%M:%S')
+                file_index = build_file_index(repo_path, since_str, before_str)
+
                 m1 = compute_single_commit_m1_features(
                     repo_path=repo_path,
                     commit_date=commit_date,
@@ -267,10 +274,10 @@ class CommitFeatureExtractor:
                     dirs_touched=features.get('dirs_touched', 0),
                     since_date=self.since,
                     risky_hashes=set(self.file_touches.keys()) if self.file_touches else None,
+                    file_index=file_index,
                 )
                 features.update(m1)
             except Exception as e:
-                # Fallback: set all M.1 features to 0
                 import warnings
                 warnings.warn(f"M.1 feature computation failed: {e}", stacklevel=2)
 
