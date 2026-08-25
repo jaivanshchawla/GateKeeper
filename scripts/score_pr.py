@@ -14,6 +14,7 @@ Usage:
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 
 import numpy as np
 import requests
@@ -24,6 +25,8 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ml.extract_features import CommitFeatureExtractor
+from rules.base import CommitContext
+from rules.engine import load_config as load_rules_config, RuleEngine
 
 # Trusted types for model deserialization
 TRUSTED_TYPES = [
@@ -167,6 +170,8 @@ def format_markdown(
     author: str = "",
     explanations: list[dict] = None,
     touched_files_info: list[dict] = None,
+    rule_results: list = None,
+    features: dict = None,
 ) -> str:
     """Format the risk assessment as markdown.
 
@@ -178,8 +183,9 @@ def format_markdown(
         author: commit author name
         explanations: list of SHAP explanation dicts (preferred over factors)
         touched_files_info: list of dicts with file metadata for per-file table
+        rule_results: list of RuleResult from the rule engine
+        features: raw feature dict for evidence
     """
-    # Emoji for risk level
     emoji = {"low": "[LOW]", "medium": "[MED]", "high": "[HIGH]"}.get(risk_label, "[UNK]")
 
     author_text = f" by **{author}**" if author else ""
@@ -197,9 +203,8 @@ def format_markdown(
     file_table = ""
     if touched_files_info:
         file_rows = []
-        for fi in touched_files_info[:10]:  # Cap at 10 files
+        for fi in touched_files_info[:10]:
             name = fi.get("name", "unknown")
-            # Truncate long paths
             if len(name) > 60:
                 name = "..." + name[-57:]
             prior = fi.get("prior_changes", 0)
@@ -214,6 +219,52 @@ def format_markdown(
             + ("\n\n_...and more files" if len(touched_files_info) > 10 else "")
         )
 
+    # Rule engine results
+    rule_section = ""
+    if rule_results:
+        from rules.base import Severity
+        blocked = [r for r in rule_results if not r.passed and r.severity == Severity.BLOCK]
+        warned = [r for r in rule_results if not r.passed and r.severity == Severity.WARN]
+        info = [r for r in rule_results if not r.passed and r.severity == Severity.INFO]
+        all_passed = all(r.passed for r in rule_results)
+
+        rule_lines = []
+        if blocked:
+            rule_lines.append("#### :no_entry: Blocked")
+            for r in blocked:
+                rule_lines.append(f"- **{r.rule_name}**: {r.message}")
+        if warned:
+            rule_lines.append("#### :warning: Warnings")
+            for r in warned:
+                rule_lines.append(f"- **{r.rule_name}**: {r.message}")
+        if info:
+            rule_lines.append("#### :information_source: Info")
+            for r in info:
+                rule_lines.append(f"- **{r.rule_name}**: {r.message}")
+        if all_passed:
+            rule_lines.append("All rules passed.")
+
+        rule_section = "\n### Rules\n\n" + "\n".join(rule_lines)
+
+    # Build collapsed details block with full feature breakdown
+    details_block = ""
+    if features:
+        detail_rows = []
+        for k, v in sorted(features.items()):
+            if k in ("touched_files", "hash", "author", "source_repo"):
+                continue  # skip metadata
+            if isinstance(v, float):
+                detail_rows.append(f"| {k} | {v:.4f} |")
+            else:
+                detail_rows.append(f"| {k} | {v} |")
+        details_block = (
+            '\n<details>\n<summary>Full feature breakdown</summary>\n\n'
+            "| Feature | Value |\n"
+            "|---------|-------|\n"
+            + "\n".join(detail_rows)
+            + "\n\n</details>"
+        )
+
     markdown = f"""## Gatekeeper Risk Assessment{author_text}
 
 | Metric | Value |
@@ -223,10 +274,12 @@ def format_markdown(
 
 ### Why this score?
 {reasons_text}
+{rule_section}
 {file_table}
+{details_block}
 
 ---
-*Scored by [Gatekeeper](https://github.com/jaivanshchawla/GateKeeper) - automated commit risk analysis*"""
+*Scored by [Gatekeeper](https://github.com/jaivanshchawla/GateKeeper) — automated commit risk analysis*"""
 
     return markdown
 
@@ -304,7 +357,6 @@ def main():
         touched_files = features.get("touched_files", "")
         if touched_files:
             file_list = [f.strip() for f in str(touched_files).split(",") if f.strip()]
-            # Try to get file history from extractor
             if hasattr(extractor, "file_touches") and extractor.file_touches:
                 for fp in file_list[:10]:
                     touches = extractor.file_touches.get(fp, [])
@@ -325,10 +377,44 @@ def main():
     except Exception:
         pass
 
+    # Run rule engine
+    rule_results = []
+    try:
+        touched_files = features.get("touched_files", "")
+        file_list = [f.strip() for f in str(touched_files).split(",") if f.strip()] if touched_files else []
+        is_direct = os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF", "").endswith(os.environ.get("GITHUB_REPO_DEFAULT_BRANCH", "main"))
+        commit_ts = features.get("commit_timestamp")
+        dt = datetime.fromtimestamp(commit_ts, tz=timezone.utc) if commit_ts else datetime.now(timezone.utc)
+        ctx = CommitContext(
+            hash=commit_hash,
+            author=author,
+            message=features.get("commit_message", ""),
+            files=file_list,
+            lines_added=features.get("lines_added", 0),
+            lines_deleted=features.get("lines_deleted", 0),
+            files_touched=features.get("files_touched", 0),
+            dirs_touched=features.get("dirs_touched", 0),
+            is_merge=bool(features.get("is_merge", 0)),
+            hour_of_day=dt.hour,
+            day_of_week=dt.weekday(),
+            author_prior_commits=features.get("author_prior_commits", 0),
+            file_revert_count_max=features.get("file_revert_count_max", 0),
+            file_prior_changes_max=features.get("file_prior_changes_max", 0),
+            repo_name=os.path.basename(repo_path) if repo_path else "",
+            is_direct_push=is_direct,
+            risk_score=risk_score,
+            risk_label=risk_label,
+        )
+        engine = RuleEngine(load_rules_config())
+        rule_results = engine.evaluate(ctx)
+    except Exception as e:
+        print(f"WARNING: Rule engine failed: {e}", file=sys.stderr)
+
     # Generate markdown
     markdown = format_markdown(
         commit_hash, risk_score, risk_label, factors, author,
         explanations=explanations, touched_files_info=touched_files_info,
+        rule_results=rule_results, features=features,
     )
 
     # Print markdown to stdout

@@ -221,6 +221,13 @@ class CommitFeatureExtractor:
             features = self._extract_features_from_commit(commit)
             # Remove commit_msg as it's not used in training
             features.pop('commit_msg', None)
+            # Add metadata needed by score_pr.py and rule engine
+            features['commit_message'] = commit.msg or ''
+            features['commit_timestamp'] = commit.committer_date.timestamp() if hasattr(commit.committer_date, 'timestamp') else 0
+            try:
+                features['touched_files'] = ",".join([getattr(m, 'filename', getattr(m, 'new_path', str(m))) for m in commit.modified_files]) if commit.modified_files else ""
+            except Exception:
+                features['touched_files'] = ""
             return features
 
         raise ValueError(f"Commit {commit_hash} not found in repository")
