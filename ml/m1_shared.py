@@ -117,9 +117,14 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
     """Count commits per author before a given date.
 
     Used by both bulk (before window start) and SC (before commit date).
+    Accepts either a date string (YYYY-MM-DD) or ISO-8601 timestamp.
+    Uses --before (not --until) so ISO-8601 timestamps preserve the
+    exact time, avoiding midnight truncation.
     """
+    # Use --before instead of --until to avoid midnight truncation.
+    # --before with ISO-8601 preserves exact time; --until truncates to midnight.
     result = subprocess.run(
-        ["git", "log", f"--until={before_date}", "--format=%aN",
+        ["git", "log", f"--before={before_date}", "--format=%aN",
          "--no-merges", "HEAD"],
         cwd=repo_path, capture_output=True, text=True, timeout=300,
     )

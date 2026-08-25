@@ -227,7 +227,9 @@ class CommitFeatureExtractor:
         )
         commit_ts = int(result.stdout.strip())
         commit_dt = datetime.fromtimestamp(commit_ts, tz=_tz.utc).replace(tzinfo=None)
-        commit_date_str = commit_dt.strftime("%Y-%m-%d")
+        # S.1 FIX: Use ISO-8601 timestamp (not date string) to avoid midnight
+        # truncation. --before with full timestamp preserves exact time.
+        commit_iso = commit_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
         # Step 2: Seed author_prior_counts BEFORE commit_date
         # Bulk: count_authors_before(rp, WINDOW_START) + increment in window
@@ -235,7 +237,7 @@ class CommitFeatureExtractor:
         # SC must compute the same value.
         if not self.author_prior_counts:
             from ml.m1_shared import count_authors_before
-            self.author_prior_counts = count_authors_before(repo_path, commit_date_str)
+            self.author_prior_counts = count_authors_before(repo_path, commit_iso)
 
         # Step 3: Use PyDriller to get the specific commit (for base features)
         repository = Repository(repo_path, single=commit_hash)
