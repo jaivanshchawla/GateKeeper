@@ -213,6 +213,22 @@ class CommitFeatureExtractor:
         Returns:
             Dictionary with feature values for the commit
         """
+        # Seed author_prior_counts from full repo history (matches bulk extraction)
+        if not self.author_prior_counts:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["git", "log", "--pretty=format:%an", "--no-merges", "HEAD"],
+                    cwd=repo_path, capture_output=True, timeout=60,
+                    encoding="utf-8", errors="replace",
+                )
+                for name in result.stdout.strip().split("\n"):
+                    name = name.strip()
+                    if name:
+                        self.author_prior_counts[name] += 1
+            except Exception:
+                pass  # Fallback: counts stay at 0
+
         # Use PyDriller to get the specific commit
         repository = Repository(repo_path, single=commit_hash)
 
@@ -225,9 +241,39 @@ class CommitFeatureExtractor:
             features['commit_message'] = commit.msg or ''
             features['commit_timestamp'] = commit.committer_date.timestamp() if hasattr(commit.committer_date, 'timestamp') else 0
             try:
-                features['touched_files'] = ",".join([getattr(m, 'filename', getattr(m, 'new_path', str(m))) for m in commit.modified_files]) if commit.modified_files else ""
+                # Use new_path for full path (not filename which is basename only)
+                # Normalize to forward slashes for cross-platform consistency with git log
+                features['touched_files'] = ",".join([
+                    getattr(m, 'new_path', getattr(m, 'filename', str(m))).replace('\\', '/')
+                    for m in commit.modified_files
+                ]) if commit.modified_files else ""
             except Exception:
                 features['touched_files'] = ""
+
+            # Compute M.1 features (file history, author-file, change-shape)
+            try:
+                from ml.single_commit_features import compute_single_commit_m1_features
+                commit_date = commit.committer_date
+                if commit_date.tzinfo is not None:
+                    commit_date = commit_date.astimezone(__import__('datetime').timezone.utc)
+                touched = set(features['touched_files'].split(",")) if features.get('touched_files') else set()
+                m1 = compute_single_commit_m1_features(
+                    repo_path=repo_path,
+                    commit_date=commit_date,
+                    author_name=features.get('author', ''),
+                    touched_files=touched,
+                    lines_added=features.get('lines_added', 0),
+                    lines_deleted=features.get('lines_deleted', 0),
+                    dirs_touched=features.get('dirs_touched', 0),
+                    since_date=self.since,
+                    risky_hashes=set(self.file_touches.keys()) if self.file_touches else None,
+                )
+                features.update(m1)
+            except Exception as e:
+                # Fallback: set all M.1 features to 0
+                import warnings
+                warnings.warn(f"M.1 feature computation failed: {e}", stacklevel=2)
+
             return features
 
         raise ValueError(f"Commit {commit_hash} not found in repository")
