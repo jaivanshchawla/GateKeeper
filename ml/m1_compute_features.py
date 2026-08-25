@@ -91,7 +91,11 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
 def compute_features_incremental(repo_name: str, df: pd.DataFrame, graph: dict) -> pd.DataFrame:
     """Compute all M.1 features INCREMENTALLY in one chronological pass."""
     repo_df = df[df["source_repo"] == repo_name].copy()
-    risky_hashes = set(df[df["risky"] == 1]["hash"].values)
+    # R.1 FIX: compute risky per-repo from graph, NOT pooled from CSV.
+    # The CSV's risky column is correct per-repo, but pooling all repos
+    # gives a different set than the per-repo graph computation.
+    from ml.m1_shared import compute_risky_hashes
+    risky_hashes = compute_risky_hashes(graph)
 
     # Sort graph chronologically
     sorted_graph = sorted(graph.items(), key=lambda x: x[1]["date"])
@@ -155,6 +159,7 @@ def compute_features_incremental(repo_name: str, df: pd.DataFrame, graph: dict) 
             # Remove co-change (not in current config)
             features.pop("co_change_strength_max", None)
             features.pop("co_change_strength_mean", None)
+            features["hash"] = h
             results.append(features)
 
         # ── Update running state for ALL commits (needed for file tracking) ──
@@ -184,7 +189,14 @@ def compute_features_incremental(repo_name: str, df: pd.DataFrame, graph: dict) 
                 for j in range(i + 1, len(fl2)):
                     co_change[(fl2[i], fl2[j])] += 1
 
-    return pd.DataFrame(results, index=repo_df.index)
+    # Align results with repo_df index — map by hash
+    result_df = pd.DataFrame(results)
+    if "hash" in result_df.columns:
+        result_df = result_df.set_index("hash")
+        # Reindex to match repo_df's hash order
+        result_df = result_df.reindex(repo_df["hash"].values, fill_value=0)
+        result_df.index = repo_df.index
+    return result_df
 
 
 def bootstrap_auc_ci(y_true, y_prob, n_bootstrap=1000, seed=42):
