@@ -22,19 +22,12 @@ def _run_git(repo_path: str, args: list[str], timeout: int = 30) -> str:
 
 
 def build_file_index(repo_path: str, since_date: str, before_date: str,
-                      max_years: float = 1.0) -> dict[str, list[dict]]:
+                      max_years: float = 2.0) -> dict[str, list[dict]]:
     """Single git log call: build file → commit index.
 
-    Uses a 1-year window (max_years) for speed on large repos.
-    The index is used for M.1 feature computation only.
+    Uses a 2-year window (matching bulk extraction) for feature parity.
     """
-    # Limit window to max_years for speed
-    before_dt = datetime.strptime(before_date[:10], "%Y-%m-%d")
-    since_dt = max(
-        datetime.strptime(since_date, "%Y-%m-%d"),
-        before_dt - timedelta(days=int(365 * max_years))
-    )
-    since_str = since_dt.strftime("%Y-%m-%d")
+    since_str = since_date or '2020-01-01'
 
     output = _run_git(repo_path, [
         "log", f"--since={since_str}", f"--before={before_date}",
@@ -73,6 +66,35 @@ def build_file_index(repo_path: str, since_date: str, before_date: str,
     return dict(index)
 
 
+def compute_risky_hashes(file_index: dict, label_window_days: int = 7) -> set[str]:
+    """Compute risky hashes from the file index.
+
+    A commit is risky if any of its files were touched again within
+    label_window_days. This matches the bulk extraction logic.
+    """
+    # Build file → sorted timestamps
+    file_touches = defaultdict(list)
+    for fp, commits in file_index.items():
+        for c in commits:
+            file_touches[fp].append((c["hash"], c["ts"]))
+
+    risky_hashes = set()
+    for fp, touches in file_touches.items():
+        if len(touches) < 2:
+            continue
+        touches.sort(key=lambda x: x[1])
+        for i in range(len(touches) - 1):
+            hash_i, ts_i = touches[i]
+            for j in range(i + 1, len(touches)):
+                hash_j, ts_j = touches[j]
+                if (ts_j - ts_i) <= label_window_days * 86400:
+                    risky_hashes.add(hash_i)
+                    break
+                else:
+                    break
+    return risky_hashes
+
+
 def compute_single_commit_m1_features(
     repo_path: str,
     commit_date: datetime,
@@ -97,6 +119,10 @@ def compute_single_commit_m1_features(
         before_str = commit_date.strftime("%Y-%m-%dT%H:%M:%S")
         file_index = build_file_index(repo_path, since_str, before_str)
 
+    # Compute risky hashes from index if not provided
+    if risky_hashes is None:
+        risky_hashes = compute_risky_hashes(file_index)
+
     # ── M.1a: File-level history (dict lookups) ──
     file_change_count = {}
     file_risky_count = {}
@@ -116,7 +142,9 @@ def compute_single_commit_m1_features(
         if prior:
             file_first_ts[fp] = min(c["ts"] for c in prior)
             file_last_ts[fp] = max(c["ts"] for c in prior)
-        file_authors[fp] = set(c["author"] for c in prior if c.get("author"))
+        # file_authors not computed in bulk extraction (history_features.py returns 0)
+        # Match bulk behavior: set to empty
+        file_authors[fp] = set()
 
     changes = [file_change_count[f] for f in touched_files]
     risky_vals = [file_risky_count[f] for f in touched_files]

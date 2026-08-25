@@ -213,11 +213,13 @@ class CommitFeatureExtractor:
         Returns:
             Dictionary with feature values for the commit
         """
-        # Seed author_prior_counts from full repo history (matches bulk extraction)
+        # Seed author_prior_counts from FULL repo history (matching bulk extraction).
+        # Bulk extraction seeds from the full repo history before the training window,
+        # then increments as it processes commits in the window.
         if not self.author_prior_counts:
             try:
-                import subprocess
-                result = subprocess.run(
+                import subprocess as _sp
+                result = _sp.run(
                     ["git", "log", "--pretty=format:%an", "--no-merges", "HEAD"],
                     cwd=repo_path, capture_output=True, timeout=60,
                     encoding="utf-8", errors="replace",
@@ -227,7 +229,7 @@ class CommitFeatureExtractor:
                     if name:
                         self.author_prior_counts[name] += 1
             except Exception:
-                pass  # Fallback: counts stay at 0
+                pass
 
         # Use PyDriller to get the specific commit
         repository = Repository(repo_path, single=commit_hash)
@@ -273,7 +275,7 @@ class CommitFeatureExtractor:
                     lines_deleted=features.get('lines_deleted', 0),
                     dirs_touched=features.get('dirs_touched', 0),
                     since_date=self.since,
-                    risky_hashes=set(self.file_touches.keys()) if self.file_touches else None,
+                    risky_hashes=None,  # let compute_risky_hashes derive from index
                     file_index=file_index,
                 )
                 features.update(m1)
