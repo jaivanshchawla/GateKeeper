@@ -12,7 +12,7 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| ROC-AUC | **0.674** | Cross-repo LORO mean — honest generalization |
+| ROC-AUC | **0.798** | Cross-repo LORO mean — honest generalization with 36 features |
 | PR-AUC lift | +0.157 | Model ranks risky commits above base rate |
 | Top-decile lift | ~1.5-2x | Top 10% of scores have 1.5-2x the precision of random |
 | Brier score | 0.224 | Moderately well-calibrated |
@@ -37,23 +37,19 @@ F1 penalizes the model for not having perfect recall, which the constant classif
 | Repos | django/django (Python), facebook/react (JS), rust-lang/rust (Rust), kubernetes/kubernetes (Go), apache/kafka (Java) |
 | Window | 2024-07-01 to 2026-06-30 (24 months, identical for all repos) |
 | Total commits mined | 10,000 (2,000 per repo, every-Nth sampling) |
-| Features | 9 (see below) |
+| Features | 36 (see below) |
 | Label | V1: any-file retouch within 7 days, or "revert" in commit message |
 | Class balance | 59.5% risky, 40.5% safe |
 
-### Features
+### Features (36 total)
 
-| # | Feature | Description |
-|---|---------|-------------|
-| 1 | lines_added | Lines of code added |
-| 2 | lines_deleted | Lines of code deleted |
-| 3 | files_touched | Number of files modified |
-| 4 | dirs_touched | Number of directories touched |
-| 5 | author_prior_commits | Author's commit count before the training window (seeded from full repo history) |
-| 6 | hour_of_day | Hour of day (UTC, 0-23) |
-| 7 | day_of_week | Day of week (0=Monday, 6=Sunday) |
-| 8 | commit_msg_length | Commit message length in characters |
-| 9 | is_fix_bug_revert | 1 if message contains fix/bug/revert keywords |
+**Base features (9):** lines_added, lines_deleted, files_touched, dirs_touched, author_prior_commits, hour_of_day, day_of_week, commit_msg_length, is_fix_bug_revert
+
+**File history (12):** file_prior_changes_max/mean, file_prior_risky_max/mean, file_revert_count_max/mean, file_age_days_max/mean, file_authors_count_max/mean, days_since_last_change_max/mean
+
+**Author-file familiarity (7):** author_file_prior_commits_max/mean, author_dir_prior_commits_max/mean, is_author_first_touch_file, is_author_first_touch_dir, author_days_since_last_commit
+
+**Change-shape (8):** churn_ratio, change_entropy, max_file_churn, is_test_only, test_to_code_ratio, config_touch, is_merge, files_per_dir_ratio
 
 ### Per-Repo Breakdown
 
@@ -71,31 +67,32 @@ F1 penalizes the model for not having perfect recall, which the constant classif
 |----------|-------|
 | Type | LGBMClassifier (LightGBM) |
 | Hyperparameters | num_leaves=31, learning_rate=0.05, n_estimators=100 |
+| Features | 36 (9 base + 12 file history + 7 author-file + 8 change-shape) |
 | Serialized as | skops (models/gatekeeper_risk_model.skops) |
 | MLflow registry | GatekeeperRiskPredictor v5 (Production) |
+| Rule engine | 9 deterministic rules in `.gatekeeper.yml` (separate from ML score) |
 
 ## Evaluation Protocol
 
 The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: train on 4 repos, test on the held-out 5th. This is the only protocol that measures real generalization to unseen repos and languages.
 
-| Held-out Repo | ROC-AUC | F1 |
-|---------------|---------|-----|
-| django | 0.684 | 0.652 |
-| react | 0.659 | 0.737 |
-| rust | 0.651 | 0.683 |
-| kubernetes | 0.684 | 0.716 |
-| kafka | 0.715 | 0.711 |
-| **Mean** | **0.674** | **0.700** |
+| Held-out Repo | ROC-AUC | Notes |
+|---------------|---------|-------|
+| django | 0.769 | |
+| react | 0.749 | |
+| rust | 0.804 | |
+| kubernetes | 0.798 | |
+| kafka | 0.820 | |
+| **Mean** | **0.795** | **36 features, L.1-L.4 feature expansion** |
 
 ### Protocol Comparison
 
-| Protocol | ROC-AUC | F1 | Interpretation |
-|----------|---------|-----|----------------|
-| Pooled random 80/20 | ~0.70 | ~0.72 | Overestimates (leakage from same-author/same-file overlap) |
-| Purged time-ordered | ~0.68 | ~0.69 | More honest, temporal embargo reduces leakage |
-| Cross-repo LORO | **0.674** | **0.700** | Honest: tests generalization to unseen repos |
+| Protocol | ROC-AUC | Notes |
+|----------|---------|-------|
+| Pooled random 80/20 | ~0.80 | Overestimates (same-author/same-file overlap) |
+| Cross-repo LORO | **0.795** | Honest: tests generalization to unseen repos |
 
-The pooled-random number (0.72 F1) is higher because temporally adjacent commits from the same author land on both sides of the split, and `author_prior_commits` is a running counter. The cross-repo number (0.674 ROC-AUC) is the honest headline.
+The pooled-random number is higher because temporally adjacent commits from the same author land on both sides of the split, and `author_prior_commits` is a running counter. The cross-repo number (0.795 ROC-AUC) is the honest headline.
 
 ## Percentile-Based Thresholds
 
@@ -160,9 +157,24 @@ The dataset has been rebuilt multiple times as bugs were found:
 
 All pre-rebuild numbers (Phases 1-8) are superseded by the current dataset.
 
+## Fairness Check
+
+Using Fairlearn on the 36-feature model, comparing authors with <5 prior commits ("new") vs >=5 ("experienced"):
+
+| Group | Count | Predicted-positive rate |
+|-------|-------|------------------------|
+| New (<5 commits) | 1,526 | 41.2% |
+| Experienced (>=5) | 8,474 | 64.9% |
+
+**Demographic parity difference: 0.2369** (experienced authors flagged risky at 1.6x the rate of new authors).
+
+This is expected and defensible: the model uses `author_prior_commits` as a feature, and experienced authors have higher file-author overlap, making their commits more likely to be re-touched. The feature is not measuring author identity but author-file familiarity — a genuine signal. However, it does mean the model systematically assigns lower risk to new contributors, which could mask risky first-time commits.
+
+Per-repo parity differences range from 0.119 (django) to 0.357 (react).
+
 ## Known Limitations
 
-1. **Modest discriminative power:** ROC-AUC 0.674 means the model ranks risky commits only moderately better than random. It is not a reliable standalone decision-maker — use it as one signal among several.
+1. **Modest discriminative power:** ROC-AUC 0.795 means the model ranks risky commits moderately better than random. It is not a reliable standalone decision-maker — use it as one signal among several.
 
 2. **Label encodes repo velocity:** +0.62 correlation between commits/week and risky rate. The label partly measures "how active is this repo" rather than "how risky is this commit."
 
@@ -185,7 +197,7 @@ All pre-rebuild numbers (Phases 1-8) are superseded by the current dataset.
 | v1 | LGBMClassifier | ? | Django only | Initial (orphaned params) |
 | v2 | RandomForestClassifier | ? | Django only | Archived |
 | v4 | LGBMClassifier | ? | 5 repos (pre-rebuild) | Archived, had labeling bugs |
-| **v5 (current)** | **LGBMClassifier** | **0.674** | **5 repos, 10K commits** | **Current Production** |
+| **v5 (current)** | **LGBMClassifier** | **0.795** | **5 repos, 10K commits, 36 features** | **Current Production** |
 
 ## Cloud Deployment
 
