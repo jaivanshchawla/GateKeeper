@@ -1,0 +1,21 @@
+{
+  "name": "gatekeeper-cli",
+  "version": "1.0.0",
+  "description": "CLI for Gatekeeper — ML-powered commit risk scoring with deterministic rules",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "gatekeeper": "src/index.js"
+  },
+  "scripts": {
+    "test": "node --test src/**/*.test.js"
+  },
+  "keywords": ["mlops", "commit-risk", "code-quality", "pre-push", "git-hook"],
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
