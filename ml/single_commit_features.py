@@ -62,10 +62,14 @@ def compute_single_commit_m1_features(
     # Get full graph and risky hashes (cached per repo)
     graph, risky_hashes = _get_full_graph(repo_path)
 
-    # Walk graph to build state up to (not including) the target commit
+    # Walk graph to build state up to (not including) the target commit.
+    # CRITICAL: use stop_hash, NOT stop_date. Multiple commits can share
+    # the same timestamp (e.g. 3 commits at 2025-11-05T12:20:57), so
+    # stop_date stops at the WRONG commit, including the target's own
+    # changes in the state. stop_hash gives exact matching.
     state, target_info = walk_graph_to_state(
         graph, risky_hashes,
-        stop_date=cd,
+        stop_hash=commit_hash,
     )
 
     # CRITICAL: Use graph file paths and author, NOT PyDriller's.
@@ -105,8 +109,5 @@ def compute_single_commit_m1_features(
     # Remove co-change features (not in current config)
     result.pop("co_change_strength_max", None)
     result.pop("co_change_strength_mean", None)
-
-    # file_authors_count: now computed correctly by compute_m1_features.
-    # CSV was recomputed to match, so no override needed.
 
     return result

@@ -93,8 +93,10 @@ class CommitFeatureExtractor:
         }
 
         # Author's total prior commit count
+        # Use .get() — count_authors_before uses --before which excludes
+        # the commit itself, so first-time authors won't be in the dict.
         author_name = commit.author.name
-        author_prior_commits = self.author_prior_counts[author_name]
+        author_prior_commits = self.author_prior_counts.get(author_name, 0)
 
         # Temporal features — committer_date, normalized to UTC
         commit_date = commit.committer_date
