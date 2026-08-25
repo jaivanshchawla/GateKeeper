@@ -214,6 +214,7 @@ fail_on:
   // 2. Install pre-push hook
   const hooksDir = join(gitRoot, '.git', 'hooks');
   const hookPath = join(hooksDir, 'pre-push');
+  const cliPath = join(gitRoot, 'cli', 'src', 'index.js');
   const hookContent = `#!/bin/sh
 # Gatekeeper pre-push hook
 # Scores outgoing commits and warns on high risk.
@@ -224,7 +225,7 @@ if [ "$SKIP" = "gatekeeper-score" ] || [ "$SKIP" = "all" ]; then
 fi
 
 echo "🛡️  Gatekeeper: Scoring outgoing commits..."
-npx gatekeeper check
+node "${cliPath.replace(/\\/g, '/')}" check
 exit $?
 `;
   writeFileSync(hookPath, hookContent);
