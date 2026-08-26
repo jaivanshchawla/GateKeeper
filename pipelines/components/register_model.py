@@ -116,24 +116,41 @@ def register_model(
     # This ensures we never mix evaluation protocols in a promotion decision.
     # ROC-AUC is the honest headline metric (F1 loses to constant baseline
     # on 4/5 repos at these base rates).
+    #
+    # CRITICAL: refuse promotion when roc_auc_cross_repo is absent.
+    # Falling back to pooled roc_auc is exactly how v7 was promoted on
+    # the wrong metric. A model logged without cross-repo metrics was
+    # not evaluated honestly and must not be promoted.
     new_roc = new_metrics.get("roc_auc", 0)
-    new_roc_cross = new_metrics.get("roc_auc_cross_repo", new_roc)
+    new_roc_cross = new_metrics.get("roc_auc_cross_repo")
     current_roc = current_metrics.get("roc_auc", 0)
-    current_roc_cross = current_metrics.get("roc_auc_cross_repo", current_roc)
-    should_promote = new_roc_cross > current_roc_cross if current_version else True
+    current_roc_cross = current_metrics.get("roc_auc_cross_repo")
+
+    if new_roc_cross is None:
+        print("\nREFUSING PROMOTION: roc_auc_cross_repo not found in new model metrics.")
+        print("The model was not evaluated under cross-repo LORO protocol.")
+        print("Log roc_auc_cross_repo as a metric (not param) to enable promotion.")
+        should_promote = False
+    elif current_roc_cross is None and current_version:
+        print("\nREFUSING PROMOTION: roc_auc_cross_repo not found in current Production model.")
+        print("Cannot compare against a model evaluated under a different protocol.")
+        should_promote = False
+    else:
+        should_promote = new_roc_cross > current_roc_cross if current_version else True
 
     print(f"\n{'=' * 60}")
     print("Model Promotion Decision:")
     print(f"  New model ROC-AUC (pooled):    {new_roc:.4f}")
-    print(f"  New model ROC-AUC (cross-repo): {new_roc_cross:.4f}")
+    print(f"  New model ROC-AUC (cross-repo): {new_roc_cross if new_roc_cross is not None else 'MISSING'}")
     print(f"  Current ROC-AUC (pooled):      {current_roc:.4f}")
-    print(f"  Current ROC-AUC (cross-repo):  {current_roc_cross:.4f}")
+    print(f"  Current ROC-AUC (cross-repo):  {current_roc_cross if current_roc_cross is not None else 'MISSING'}")
     print("  Eval protocol: cross_repo_loro")
     print(
         "  Decision: "
         + (
             "PROMOTE (new model is better on cross-repo ROC-AUC)"
             if should_promote
+            else "REFUSED" if new_roc_cross is None or (current_version and current_roc_cross is None)
             else "KEEP current Production model"
         )
     )
