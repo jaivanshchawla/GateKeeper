@@ -158,7 +158,9 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
 def walk_graph_to_state(graph: dict, risky_hashes: set[str],
                         stop_hash: str | None = None,
                         stop_date: datetime | None = None,
-                        sorted_graph: list | None = None):
+                        sorted_graph: list | None = None,
+                        start_index: int = 0,
+                        start_state: dict | None = None):
     """Walk graph chronologically, building running state.
 
     Stops BEFORE stop_hash (exclusive) or before stop_date (exclusive).
@@ -170,25 +172,48 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
     Args:
         sorted_graph: Optional pre-sorted list of (hash, info) tuples.
             If provided, skips the O(n log n) sort on every call.
+        start_index: Index in sorted_graph to start from (for snapshot resume).
+        start_state: Pre-built state dict to resume from (for snapshot resume).
     """
     if sorted_graph is None:
         sorted_graph = sorted(graph.items(), key=lambda x: x[1]["date"])
 
-    # Running state — same variables as compute_features_incremental
-    file_change_count: dict[str, int] = defaultdict(int)
-    file_risky_count: dict[str, int] = defaultdict(int)
-    file_revert_count: dict[str, int] = defaultdict(int)
-    file_first_seen: dict[str, datetime] = {}
-    file_last_touch_hash: dict[str, str] = {}
-    file_authors: dict[str, set] = defaultdict(set)
-    author_state: dict[str, dict] = defaultdict(
-        lambda: {"files": defaultdict(int), "dirs": defaultdict(int), "last_date": None}
-    )
-    co_change: dict[tuple, int] = defaultdict(int)
+    if start_state:
+        # Resume from snapshot
+        file_change_count = defaultdict(int, start_state.get("file_change_count", {}))
+        file_risky_count = defaultdict(int, start_state.get("file_risky_count", {}))
+        file_revert_count = defaultdict(int, start_state.get("file_revert_count", {}))
+        file_first_seen = dict(start_state.get("file_first_seen", {}))
+        file_last_touch_hash = dict(start_state.get("file_last_touch_hash", {}))
+        file_authors = defaultdict(set, {k: set(v) for k, v in start_state.get("file_authors", {}).items()})
+        author_state_raw = start_state.get("author_state", {})
+        author_state = defaultdict(
+            lambda: {"files": defaultdict(int), "dirs": defaultdict(int), "last_date": None}
+        )
+        for author, ast in author_state_raw.items():
+            author_state[author] = {
+                "files": defaultdict(int, ast.get("files", {})),
+                "dirs": defaultdict(int, ast.get("dirs", {})),
+                "last_date": ast.get("last_date"),
+            }
+        co_change = defaultdict(int, {tuple(k): v for k, v in start_state.get("co_change", {}).items()})
+    else:
+        # Running state — same variables as compute_features_incremental
+        file_change_count: dict[str, int] = defaultdict(int)
+        file_risky_count: dict[str, int] = defaultdict(int)
+        file_revert_count: dict[str, int] = defaultdict(int)
+        file_first_seen: dict[str, datetime] = {}
+        file_last_touch_hash: dict[str, str] = {}
+        file_authors: dict[str, set] = defaultdict(set)
+        author_state: dict[str, dict] = defaultdict(
+            lambda: {"files": defaultdict(int), "dirs": defaultdict(int), "last_date": None}
+        )
+        co_change: dict[tuple, int] = defaultdict(int)
 
     target_info = None
 
-    for h, v in sorted_graph:
+    for idx in range(start_index, len(sorted_graph)):
+        h, v = sorted_graph[idx]
         files_in_this = set(v.get("files", []))
         author = v.get("author", "")
         is_risky = h in risky_hashes
