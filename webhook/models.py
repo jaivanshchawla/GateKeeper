@@ -100,6 +100,9 @@ class Commit(Base):
     files_touched = Column(Text, nullable=True)  # JSON list
     lines_added = Column(Integer, nullable=True)
     lines_deleted = Column(Integer, nullable=True)
+    # U.4 outcome tracking
+    outcome_actual = Column(Integer, nullable=True)  # 0/1: was the commit actually risky?
+    outcome_checked_at = Column(DateTime, nullable=True)  # when the outcome was computed
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     def to_dict(self):
@@ -118,6 +121,8 @@ class Commit(Base):
             "files_touched": self.files_touched,
             "lines_added": self.lines_added,
             "lines_deleted": self.lines_deleted,
+            "outcome_actual": self.outcome_actual,
+            "outcome_checked_at": self.outcome_checked_at.isoformat() if self.outcome_checked_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

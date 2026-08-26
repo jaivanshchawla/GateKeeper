@@ -117,9 +117,28 @@ class RealizedOutcome:
 
 
 class OutcomeDB:
-    """SQLite database for persisting scores and outcomes."""
+    """Outcome database: Postgres via SQLAlchemy when available, SQLite fallback."""
 
     def __init__(self, db_path: str | Path | None = None):
+        # Try Postgres first
+        self.use_postgres = False
+        self.Session = None
+        try:
+            from webhook.models import Commit, Repo, engine, SessionLocal
+            from sqlalchemy import inspect
+            # Check if tables exist
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            if "commits" in tables:
+                self.use_postgres = True
+                self.Session = SessionLocal
+                self.Commit = Commit
+                self.Repo = Repo
+                return
+        except Exception:
+            pass
+
+        # SQLite fallback
         if db_path is None:
             db_path = os.path.join(os.path.dirname(__file__), "..", "data", "outcomes.db")
         self.db_path = str(db_path)
@@ -133,31 +152,57 @@ class OutcomeDB:
         self.conn.commit()
 
     def close(self):
-        self.conn.close()
+        if not self.use_postgres and hasattr(self, 'conn'):
+            self.conn.close()
 
     def persist_score(self, score: ScoredCommit) -> None:
         """Persist a scored commit to the database."""
-        self.conn.execute(
-            """INSERT INTO scored_commits
-               (commit_hash, repo_name, repo_url, scored_at, risk_score, risk_label,
-                band_counts, features, shap_top3, rule_results, pr_number, author)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                score.commit_hash,
-                score.repo_name,
-                score.repo_url,
-                score.scored_at or datetime.now(timezone.utc).isoformat(),
-                score.risk_score,
-                score.risk_label,
-                json.dumps(score.band_counts) if score.band_counts else None,
-                json.dumps(score.features) if score.features else None,
-                json.dumps(score.shap_top3) if score.shap_top3 else None,
-                json.dumps(score.rule_results) if score.rule_results else None,
-                score.pr_number,
-                score.author,
-            ),
-        )
-        self.conn.commit()
+        if self.use_postgres:
+            session = self.Session()
+            try:
+                # Find or create repo
+                repo = session.query(self.Repo).filter_by(name=score.repo_name).first()
+                if not repo:
+                    repo = self.Repo(name=score.repo_name, remote_url=score.repo_url)
+                    session.add(repo)
+                    session.flush()
+                commit = self.Commit(
+                    repo_id=repo.id,
+                    sha=score.commit_hash,
+                    author=score.author,
+                    timestamp=datetime.fromisoformat(score.scored_at) if score.scored_at else datetime.now(timezone.utc),
+                    score=int(score.risk_score * 100),
+                    band=score.risk_label,
+                    risk_label=score.risk_label,
+                    rule_results=json.dumps(score.rule_results) if score.rule_results else None,
+                    shap_top3=json.dumps(score.shap_top3) if score.shap_top3 else None,
+                )
+                session.add(commit)
+                session.commit()
+            finally:
+                session.close()
+        else:
+            self.conn.execute(
+                """INSERT INTO scored_commits
+                   (commit_hash, repo_name, repo_url, scored_at, risk_score, risk_label,
+                    band_counts, features, shap_top3, rule_results, pr_number, author)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    score.commit_hash,
+                    score.repo_name,
+                    score.repo_url,
+                    score.scored_at or datetime.now(timezone.utc).isoformat(),
+                    score.risk_score,
+                    score.risk_label,
+                    json.dumps(score.band_counts) if score.band_counts else None,
+                    json.dumps(score.features) if score.features else None,
+                    json.dumps(score.shap_top3) if score.shap_top3 else None,
+                    json.dumps(score.rule_results) if score.rule_results else None,
+                    score.pr_number,
+                    score.author,
+                ),
+            )
+            self.conn.commit()
 
     def persist_scores(self, scores: list[ScoredCommit]) -> None:
         """Batch persist scored commits."""
@@ -165,18 +210,34 @@ class OutcomeDB:
             self.persist_score(score)
 
     def get_uncomputed_outcomes(self, min_age_days: int = 7) -> list[dict]:
-        """Get scored commits whose outcomes haven't been computed yet.
-
-        Only returns commits older than min_age_days (the label window).
-        """
+        """Get scored commits whose outcomes haven't been computed yet."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=min_age_days)).isoformat()
-        rows = self.conn.execute(
-            """SELECT commit_hash, repo_name, risk_score, risk_label, scored_at
-               FROM scored_commits
-               WHERE outcome_computed = 0 AND scored_at < ?""",
-            (cutoff,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        if self.use_postgres:
+            session = self.Session()
+            try:
+                rows = (
+                    session.query(self.Commit)
+                    .filter(self.Commit.outcome_actual.is_(None))
+                    .filter(self.Commit.timestamp < datetime.fromisoformat(cutoff))
+                    .all()
+                )
+                return [{
+                    "commit_hash": r.sha,
+                    "repo_name": session.query(self.Repo).get(r.repo_id).name if r.repo_id else "",
+                    "risk_score": (r.score or 0) / 100.0,
+                    "risk_label": r.risk_label or r.band or "low",
+                    "scored_at": r.timestamp.isoformat() if r.timestamp else "",
+                } for r in rows]
+            finally:
+                session.close()
+        else:
+            rows = self.conn.execute(
+                """SELECT commit_hash, repo_name, risk_score, risk_label, scored_at
+                   FROM scored_commits
+                   WHERE outcome_computed = 0 AND scored_at < ?""",
+                (cutoff,),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def record_outcome(
         self,
@@ -188,26 +249,39 @@ class OutcomeDB:
         detail: dict | None = None,
     ) -> None:
         """Record the realized outcome for a commit."""
-        self.conn.execute(
-            """UPDATE scored_commits
-               SET outcome_computed = 1,
-                   outcome_actual = ?,
-                   outcome_method = ?,
-                   outcome_window_days = ?,
-                   outcome_computed_at = ?,
-                   outcome_detail = ?
-               WHERE commit_hash = ? AND repo_name = ?""",
-            (
-                actual_label,
-                method,
-                window_days,
-                datetime.now(timezone.utc).isoformat(),
-                json.dumps(detail) if detail else None,
-                commit_hash,
-                repo_name,
-            ),
-        )
-        self.conn.commit()
+        if self.use_postgres:
+            session = self.Session()
+            try:
+                repo = session.query(self.Repo).filter_by(name=repo_name).first()
+                if repo:
+                    commit = session.query(self.Commit).filter_by(sha=commit_hash, repo_id=repo.id).first()
+                    if commit:
+                        commit.outcome_actual = actual_label
+                        commit.outcome_checked_at = datetime.now(timezone.utc)
+                        session.commit()
+            finally:
+                session.close()
+        else:
+            self.conn.execute(
+                """UPDATE scored_commits
+                   SET outcome_computed = 1,
+                       outcome_actual = ?,
+                       outcome_method = ?,
+                       outcome_window_days = ?,
+                       outcome_computed_at = ?,
+                       outcome_detail = ?
+                   WHERE commit_hash = ? AND repo_name = ?""",
+                (
+                    actual_label,
+                    method,
+                    window_days,
+                    datetime.now(timezone.utc).isoformat(),
+                    json.dumps(detail) if detail else None,
+                    commit_hash,
+                    repo_name,
+                ),
+            )
+            self.conn.commit()
 
     def compute_production_metrics(
         self,
