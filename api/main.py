@@ -103,6 +103,37 @@ class PredictionResponse(BaseModel):
     commit_hash: str = ""
     explanations: list[ExplanationItem] = []
 
+class CommitScoreRequest(BaseModel):
+    """A single commit to score within a PR."""
+    hash: str
+    features: Features
+
+
+class ScorePRRequest(BaseModel):
+    """Request model for PR-level scoring endpoint."""
+    commits: list[CommitScoreRequest]
+    repo_name: str = ""
+
+
+class PRVerdictResponse(BaseModel):
+    """Response model for PR-level scoring endpoint."""
+    verdict: str  # low/medium/high
+    mean_score: float
+    max_score: float
+    band_counts: dict[str, int]
+    total_commits: int
+    total_files: int
+    total_lines_added: int
+    total_lines_deleted: int
+    riskiest_commit_hash: str = ""
+    should_block: bool
+    blocked_rules: list[dict]
+    warned_rules: list[dict]
+    info_rules: list[dict]
+    patterns: list[dict]
+    comment_markdown: str = ""
+
+
 class HealthResponse(BaseModel):
     """Response model for health endpoint."""
     status: str
@@ -296,6 +327,137 @@ async def predict(request: PredictionRequest):
             status_code=500,
             detail=f"Prediction error: {e!s}"
         )
+
+@app.post("/score_pr", response_model=PRVerdictResponse)
+async def score_pr(request: ScorePRRequest):
+    """Score every commit in a PR and return an aggregated verdict.
+
+    Takes a list of commits with their features, scores each one,
+    aggregates to a PR-level verdict, detects PR-level patterns,
+    and returns a formatted GitHub comment.
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    try:
+        from ml.pr_scoring import (
+            CommitScore,
+            aggregate_commits_to_pr,
+            detect_pr_patterns,
+            format_pr_comment,
+        )
+
+        commit_scores = []
+        rule_engine = None
+        try:
+            from rules.engine import RuleEngine, load_config as load_rules_config
+            rule_engine = RuleEngine(load_rules_config())
+        except Exception:
+            pass
+
+        for req in request.commits:
+            # Score with model
+            feature_values = [getattr(req.features, col, 0) for col in FEATURE_COLUMNS]
+            features_array = np.array([feature_values])
+            risk_score = float(model.predict_proba(features_array)[0][1])
+
+            # Determine band
+            repo_name = getattr(req.features, "source_repo", request.repo_name, "")
+            repo_thresholds = THRESHOLDS.get(repo_name, DEFAULT_THRESHOLDS)
+            if risk_score >= repo_thresholds["high"]:
+                risk_label = "high"
+            elif risk_score >= repo_thresholds["medium"]:
+                risk_label = "medium"
+            else:
+                risk_label = "low"
+
+            # SHAP explanations
+            explanations = []
+            if explainer is not None:
+                try:
+                    from ml.explainer import explain, format_explanation
+                    features_dict = {col: getattr(req.features, col, 0) for col in FEATURE_COLUMNS}
+                    factors = explain(features_array, top_k=3)
+                    human_readable = format_explanation(factors, features_dict)
+                    explanations = [
+                        {**f, "human_readable": hr}
+                        for f, hr in zip(factors, human_readable)
+                    ]
+                except Exception:
+                    pass
+
+            # Run rules
+            rule_results = []
+            if rule_engine is not None:
+                try:
+                    touched = getattr(req.features, "touched_files", "")
+                    file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
+                    ctx = CommitContext(
+                        hash=req.hash,
+                        author=getattr(req.features, "author", ""),
+                        message=getattr(req.features, "commit_message", ""),
+                        files=file_list,
+                        lines_added=req.features.lines_added,
+                        lines_deleted=req.features.lines_deleted,
+                        files_touched=req.features.files_touched,
+                        dirs_touched=req.features.dirs_touched,
+                        is_merge=bool(getattr(req.features, "is_merge", 0)),
+                        hour_of_day=req.features.hour_of_day,
+                        day_of_week=req.features.day_of_week,
+                        author_prior_commits=req.features.author_prior_commits,
+                        file_revert_count_max=int(getattr(req.features, "file_revert_count_max", 0)),
+                        file_prior_changes_max=int(getattr(req.features, "file_prior_changes_max", 0)),
+                        repo_name=repo_name,
+                        risk_score=risk_score,
+                        risk_label=risk_label,
+                    )
+                    rule_results = rule_engine.evaluate(ctx)
+                except Exception:
+                    pass
+
+            cs = CommitScore(
+                hash=req.hash,
+                author=getattr(req.features, "author", ""),
+                message=getattr(req.features, "commit_message", ""),
+                risk_score=risk_score,
+                risk_label=risk_label,
+                files=file_list if 'file_list' in dir() else [],
+                lines_added=req.features.lines_added,
+                lines_deleted=req.features.lines_deleted,
+                files_touched=req.features.files_touched,
+                rule_results=rule_results,
+                explanations=explanations,
+                blocked=rule_engine.should_block(rule_results) if rule_engine else False,
+                warning_count=sum(1 for r in rule_results if not r.passed and r.severity == Severity.WARN),
+            )
+            commit_scores.append(cs)
+
+        # Aggregate to PR verdict
+        verdict = aggregate_commits_to_pr(commit_scores)
+        comment = format_pr_comment(verdict, request.repo_name)
+
+        return PRVerdictResponse(
+            verdict=verdict.verdict,
+            mean_score=verdict.mean_score,
+            max_score=verdict.max_score,
+            band_counts=verdict.band_counts,
+            total_commits=verdict.total_commits,
+            total_files=verdict.total_files,
+            total_lines_added=verdict.total_lines_added,
+            total_lines_deleted=verdict.total_lines_deleted,
+            riskiest_commit_hash=verdict.riskiest_commit.hash if verdict.riskiest_commit else "",
+            should_block=verdict.should_block,
+            blocked_rules=verdict.blocked_rules,
+            warned_rules=verdict.warned_rules,
+            info_rules=verdict.info_rules,
+            patterns=verdict.patterns,
+            comment_markdown=comment,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PR scoring error: {e!s}")
+
 
 if __name__ == "__main__":
     import uvicorn

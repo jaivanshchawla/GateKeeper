@@ -45,5 +45,19 @@ ml_scoring:
     high: 0.90
     medium: 0.75
 
+reviewer_suggestions:
+  enabled: true
+  max_suggestions: 3
+  half_life_days: 180
+  exclude_bots: true
+  bot_patterns:
+    - "dependabot"
+    - "renovate"
+    - "*[bot]"
+    - "github-actions"
+
+content_analysis:
+  enabled: true  # default true locally, false for hosted API
+
 fail_on:
   - block
