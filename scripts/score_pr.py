@@ -186,7 +186,14 @@ def format_markdown(
         rule_results: list of RuleResult from the rule engine
         features: raw feature dict for evidence
     """
-    emoji = {"low": "[LOW]", "medium": "[MED]", "high": "[HIGH]"}.get(risk_label, "[UNK]")
+    # Display labels: internal values stay low/medium/high, display text is honest
+    display_labels = {
+        "low": "NOT FLAGGED",
+        "medium": "ELEVATED",
+        "high": "HIGH RISK",
+    }
+    emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(risk_label, "⚪")
+    display_label = display_labels.get(risk_label, risk_label.upper())
 
     author_text = f" by **{author}**" if author else ""
 
@@ -269,7 +276,7 @@ def format_markdown(
 
 | Metric | Value |
 |--------|-------|
-| **Band** | {emoji} **{risk_label.upper()}** |
+| **Band** | {emoji} **{display_label}** |
 | **Commit** | `{commit_hash[:12]}` |
 
 ### Why this score?
@@ -279,7 +286,8 @@ def format_markdown(
 {details_block}
 
 ---
-*Scored by [Gatekeeper](https://github.com/jaivanshchawla/GateKeeper) — automated commit risk analysis*"""
+*Scored by [Gatekeeper](https://github.com/jaivanshchawla/GateKeeper) — automated commit risk analysis*
+*Note: "Not Flagged" means this commit is in the bottom 75% of risk scores — not necessarily safe. The model is a ranking signal, not a binary classifier.*"""
 
     return markdown
 

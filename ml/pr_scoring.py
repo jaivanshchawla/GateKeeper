@@ -255,13 +255,20 @@ def aggregate_commits_to_pr(
 
 def format_pr_comment(verdict: PRVerdict, repo_name: str = "") -> str:
     """Format the PR-level verdict as a GitHub comment."""
+    # Display labels: internal values stay low/medium/high, display text is honest
+    display_labels = {
+        "low": "NOT FLAGGED",
+        "medium": "ELEVATED",
+        "high": "HIGH RISK",
+    }
     emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(verdict.verdict, "⚪")
     band_emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}
+    display_label = display_labels.get(verdict.verdict, verdict.verdict.upper())
 
     lines = []
     lines.append(f"## 🛡️ Gatekeeper Risk Assessment — {repo_name}")
     lines.append("")
-    lines.append(f"### {emoji} PR Verdict: **{verdict.verdict.upper()}**")
+    lines.append(f"### {emoji} PR Verdict: **{display_label}**")
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")

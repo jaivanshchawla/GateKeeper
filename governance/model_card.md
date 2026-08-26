@@ -100,8 +100,8 @@ The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: tr
 
 Absolute thresholds (0.3/0.6) failed because the score distribution shifts when the model changes and differs per repo. Instead, per-repo percentile bands are used:
 
-| Repo | High (top 10%) | Medium (next 15%) | Low (bottom 75%) |
-|------|----------------|-------------------|------------------|
+| Repo | High Risk (top 10%) | Elevated (next 15%) | Not Flagged (bottom 75%) |
+|------|---------------------|---------------------|-------------------------|
 | django | >= 0.8029 | >= 0.6841 | < 0.6841 |
 | react | >= 0.8839 | >= 0.8042 | < 0.8042 |
 | rust | >= 0.8632 | >= 0.7659 | < 0.7659 |
@@ -110,6 +110,18 @@ Absolute thresholds (0.3/0.6) failed because the score distribution shifts when 
 | _global (fallback) | >= 0.8619 | >= 0.7536 | < 0.7536 |
 
 Cutoffs are persisted in `ml/config.yaml` and used by both `api/main.py` and `scripts/score_pr.py`. Unknown repos fall back to `_global`.
+
+### Band Semantics (W.2 Backfill)
+
+The band names reflect what the model actually measures:
+
+| Band | Display Name | Meaning | Realized Precision | Lift |
+|------|-------------|---------|-------------------|------|
+| high | **HIGH RISK** | Top 10% — genuinely elevated risk | 88.0% [81.8%, 92.3%] | 1.60x |
+| medium | **ELEVATED** | Next 15% — worth reviewing | 80.4% [71.9%, 86.8%] | 1.46x |
+| low | **NOT FLAGGED** | Bottom 75% — not necessarily safe | 44.8% [41.3%, 48.4%] | 0.81x |
+
+Base rate: 55.1%. "Not Flagged" means the commit is in the bottom 75% of the score distribution — the model is a **ranking signal**, not a binary classifier. Presenting it as "safe" would be misleading. The PR comment footer includes this caveat.
 
 ## Label Density and Repo Velocity
 
