@@ -111,17 +111,25 @@ Absolute thresholds (0.3/0.6) failed because the score distribution shifts when 
 
 Cutoffs are persisted in `ml/config.yaml` and used by both `api/main.py` and `scripts/score_pr.py`. Unknown repos fall back to `_global`.
 
-### Band Semantics (W.2 Backfill)
+### Band Semantics (X.1 Out-of-Window Backfill)
 
-The band names reflect what the model actually measures:
+The band names reflect what the model actually measures on **unseen commits** (after training window end 2026-06-30). The original W.2 backfill had 75.5% Django overlap with training data, inflating precision to 100%. The numbers below are the honest production figures.
 
-| Band | Display Name | Meaning | Realized Precision | Lift |
-|------|-------------|---------|-------------------|------|
-| high | **HIGH RISK** | Top 10% — genuinely elevated risk | 88.0% [81.8%, 92.3%] | 1.60x |
-| medium | **ELEVATED** | Next 15% — worth reviewing | 80.4% [71.9%, 86.8%] | 1.46x |
-| low | **NOT FLAGGED** | Bottom 75% — not necessarily safe | 44.8% [41.3%, 48.4%] | 0.81x |
+| Repo | N | Base Rate | High Prec | High Lift | Med Prec | Med Lift |
+|------|---|-----------|-----------|-----------|----------|----------|
+| kafka | 100 | 36.0% | 80.0% [37.6%, 96.4%] | 2.22x | 63.6% [35.4%, 84.8%] | 1.77x |
+| kubernetes | 100 | 49.0% | 89.5% [68.6%, 97.1%] | 1.83x | 57.1% [25.0%, 84.2%] | 1.17x |
+| rust | 100 | 52.0% | 76.0% [56.6%, 88.5%] | 1.46x | 37.5% [13.7%, 69.4%] | 0.72x |
+| django | 145 | 39.3% | 66.7% [20.8%, 93.9%] | 1.70x | 57.1% [25.0%, 84.2%] | 1.45x |
+| react | 102 | 52.0% | 33.3% [6.1%, 79.2%] | 0.64x | 37.5% [13.7%, 69.4%] | 0.72x |
 
-Base rate: 55.1%. "Not Flagged" means the commit is in the bottom 75% of the score distribution — the model is a **ranking signal**, not a binary classifier. Presenting it as "safe" would be misleading. The PR comment footer includes this caveat.
+**Key findings:**
+- **Kafka and Kubernetes are strong**: high-band precision 80-90%, genuine lift.
+- **Rust works**: high-band 76%, CI includes 56.6%-88.5%.
+- **Django has too few out-of-window commits** (145 total, only 3 in high band) for reliable statistics.
+- **React is broken out-of-window**: high-band 33.3% is below the 52% base rate, meaning the model is actively wrong on React commits it hasn't seen.
+
+"Not Flagged" means the commit is in the bottom 75% of the score distribution — the model is a **ranking signal**, not a binary classifier. The PR comment footer includes this caveat.
 
 ## Label Density and Repo Velocity
 
