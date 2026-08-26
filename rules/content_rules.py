@@ -85,22 +85,26 @@ class TestDeletedRule(BaseRule):
     test_patterns = ("test", "spec", "_test.", "_spec.", "tests/", "test_", "__tests__")
 
     def evaluate(self, ctx: CommitContext) -> RuleResult:
-        # Check if any touched files are test files that were deleted
+        # Use deleted_files if available (from diff analysis)
         test_files_deleted = []
         test_files_added = []
 
-        for f in ctx.files:
-            is_test = any(pat in f.lower() for pat in self.test_patterns)
-            if is_test:
-                # Heuristic: if lines_deleted > 0 and lines_added == 0, likely deleted
-                # In practice, need diff analysis — this is a conservative check
-                if ctx.lines_deleted > 0 and ctx.lines_added == 0:
-                    test_files_deleted.append(f)
-                elif ctx.lines_added > 0:
-                    test_files_added.append(f)
+        # Check deleted files
+        for f in ctx.deleted_files:
+            if any(pat in f.lower() for pat in self.test_patterns):
+                test_files_deleted.append(f)
 
-        # Also check if test function count decreased (requires content analysis)
-        # This is a simplified version — full version would check diff
+        # Check added files
+        for f in ctx.added_files:
+            if any(pat in f.lower() for pat in self.test_patterns):
+                test_files_added.append(f)
+
+        # Fallback: if no deleted_files info, use heuristic
+        if not ctx.deleted_files:
+            for f in ctx.files:
+                is_test = any(pat in f.lower() for pat in self.test_patterns)
+                if is_test and ctx.lines_deleted > 0 and ctx.lines_added == 0:
+                    test_files_deleted.append(f)
 
         passed = len(test_files_deleted) == 0 or len(test_files_added) > 0
         return self._result(
@@ -179,7 +183,7 @@ class DependencyChangeRule(BaseRule):
 # ── Rule: todo_debt ─────────────────────────────────────────────────
 
 class TodoDebtRule(BaseRule):
-    """Flag added TODO/FIXME/HACK/XXX comments."""
+    """Flag added TODO/FIXME/HACK/XXX comments in diff."""
     name = "todo_debt"
     default_config = {"severity": "info"}
 
@@ -189,20 +193,32 @@ class TodoDebtRule(BaseRule):
     ]
 
     def evaluate(self, ctx: CommitContext) -> RuleResult:
-        # Count added vs removed todos in commit message
-        msg = ctx.message.upper()
-        added_todos = sum(1 for p in self.todo_patterns if re.search(p, msg))
+        # Check ADDED lines in diff (lines starting with +)
+        added_todos = 0
+        todo_examples = []
+
+        for line in ctx.added_lines:
+            for pat in self.todo_patterns:
+                if re.search(pat, line, re.IGNORECASE):
+                    added_todos += 1
+                    if len(todo_examples) < 3:
+                        todo_examples.append(line.strip()[:80])
+                    break
+
+        # Also check commit message (legacy fallback)
+        if added_todos == 0:
+            for pat in self.todo_patterns:
+                if re.search(pat, ctx.message, re.IGNORECASE):
+                    added_todos += 1
 
         if added_todos > 0:
-            found = [p for p in self.todo_patterns if re.search(p, ctx.message, re.IGNORECASE)]
-            markers = ", ".join(found)
             return self._result(
                 True,  # info, never blocks
-                f"Commit message contains {added_todos} debt marker(s): {markers}",
-                {"todo_count": added_todos},
+                f"{added_todos} debt marker(s) added in diff" + (f": {'; '.join(todo_examples)}" if todo_examples else ""),
+                {"todo_count": added_todos, "examples": todo_examples},
             )
 
-        return self._result(True, "No debt markers in commit message")
+        return self._result(True, "No debt markers added")
 
 
 # ── Rule: debug_leftover ────────────────────────────────────────────
@@ -219,12 +235,9 @@ class DebugLeftoverRule(BaseRule):
         r"\bimport\s+pdb\b", r"\bpdb\.set_trace\b",
         r"\bSystem\.out\.print\b", r"\becho\s+",
     ]
-
-    # Test file patterns — debug in tests is acceptable
     test_patterns = ("test", "spec", "_test.", "_spec.", "tests/", "__tests__")
 
     def evaluate(self, ctx: CommitContext) -> RuleResult:
-        # Check if any non-test files are modified
         non_test_files = [
             f for f in ctx.files
             if not any(pat in f.lower() for pat in self.test_patterns)
@@ -233,22 +246,21 @@ class DebugLeftoverRule(BaseRule):
         if not non_test_files:
             return self._result(True, "No non-test files modified")
 
-        # Without diff analysis, we can only check the commit message
-        # for debug-related keywords (conservative)
-        msg_lower = ctx.message.lower()
-        has_debug_keyword = any(
-            kw in msg_lower
-            for kw in ["debug", "console.log", "print(", "logging", "log statement"]
-        )
+        found = []
+        for line in ctx.added_lines:
+            for pat in self.debug_patterns:
+                if re.search(pat, line):
+                    found.append(line.strip()[:80])
+                    break
 
-        if has_debug_keyword:
+        if found:
             return self._result(
                 False,
-                f"Commit message references debug/logging — verify no debug statements left in {', '.join(non_test_files[:3])}",
-                {"non_test_files": non_test_files[:5]},
+                f"Debug statement(s) added: {'; '.join(found[:3])}",
+                {"debug_lines": found[:5], "non_test_files": non_test_files[:5]},
             )
 
-        return self._result(True, "No debug leftovers detected")
+        return self._result(True, "No debug leftovers in added lines")
 
 
 # ── Rule: large_binary ──────────────────────────────────────────────
@@ -361,18 +373,33 @@ class ComplexityDeltaRule(BaseRule):
     default_config = {"severity": "info", "max_complexity": 10}
 
     def evaluate(self, ctx: CommitContext) -> RuleResult:
-        # Without actual file content, we use a heuristic:
-        # Large changes to code files likely increase complexity
-        code_files = [
-            f for f in ctx.files
-            if f.endswith((".py", ".js", ".ts", ".jsx", ".tsx"))
+        # Count control flow keywords in ADDED lines
+        control_patterns = [
+            r"\bif\b", r"\belif\b", r"\belse\b", r"\bfor\b", r"\bwhile\b",
+            r"\btry\b", r"\bexcept\b", r"\band\b", r"\bor\b",
+            r"\bcatch\b", r"\bswitch\b", r"\bcase\b",
+        ]
+        removed_patterns = [
+            r"\bif\b", r"\belif\b", r"\belse\b", r"\bfor\b", r"\bwhile\b",
+            r"\btry\b", r"\bexcept\b", r"\band\b", r"\bor\b",
+            r"\bcatch\b", r"\bswitch\b", r"\bcase\b",
         ]
 
-        if code_files and ctx.lines_added > 100:
+        added_count = sum(
+            1 for line in ctx.added_lines
+            for pat in control_patterns if re.search(pat, line)
+        )
+        removed_count = sum(
+            1 for line in ctx.removed_lines
+            for pat in removed_patterns if re.search(pat, line)
+        )
+        delta = added_count - removed_count
+
+        if delta > 5:
             return self._result(
                 True,  # info, never blocks
-                f"Large code change ({ctx.lines_added} lines added to {len(code_files)} file(s)) — review complexity",
-                {"files": code_files[:5], "lines_added": ctx.lines_added},
+                f"Complexity increase: +{delta} control flow keywords in added lines ({added_count} added, {removed_count} removed)",
+                {"added": added_count, "removed": removed_count, "delta": delta},
             )
 
         return self._result(True, "Complexity within normal range")
@@ -450,6 +477,27 @@ def get_content_rules_fire_rate(
                 if match:
                     lines_deleted += int(match.group(1))
 
+            # Get diff text for content rules
+            diff_result = subprocess.run(
+                ["git", "diff-tree", "--no-commit-id", "-p", commit_hash],
+                cwd=repo_path, capture_output=True, text=True, timeout=15,
+            )
+            diff_text = diff_result.stdout
+            added_lines = [l[1:] for l in diff_text.split("\n") if l.startswith("+") and not l.startswith("+++")]
+            removed_lines = [l[1:] for l in diff_text.split("\n") if l.startswith("-") and not l.startswith("---")]
+
+            # Get deleted/added files
+            del_result = subprocess.run(
+                ["git", "diff-tree", "--no-commit-id", "-r", "--diff-filter=D", "--name-only", commit_hash],
+                cwd=repo_path, capture_output=True, text=True, timeout=10,
+            )
+            deleted_files = [f.strip() for f in del_result.stdout.strip().split("\n") if f.strip()]
+            add_result = subprocess.run(
+                ["git", "diff-tree", "--no-commit-id", "-r", "--diff-filter=A", "--name-only", commit_hash],
+                cwd=repo_path, capture_output=True, text=True, timeout=10,
+            )
+            added_files = [f.strip() for f in add_result.stdout.strip().split("\n") if f.strip()]
+
             ctx = CommitContext(
                 hash=parts[0],
                 author=parts[2],
@@ -458,6 +506,12 @@ def get_content_rules_fire_rate(
                 lines_added=lines_added,
                 lines_deleted=lines_deleted,
                 files_touched=len(files),
+                diff_text=diff_text,
+                added_lines=added_lines,
+                removed_lines=removed_lines,
+                deleted_files=deleted_files,
+                added_files=added_files,
+                repo_path=repo_path,
                 repo_name=os.path.basename(repo_path),
             )
 

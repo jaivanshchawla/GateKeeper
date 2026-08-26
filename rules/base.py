@@ -67,7 +67,16 @@ class CommitContext:
     file_prior_changes_max: int = 0
     file_prior_risky_max: int = 0
 
+    # Diff content (for content rules)
+    diff_text: str = ""  # full unified diff of the commit
+    added_lines: list[str] = field(default_factory=list)  # lines added (from diff)
+    removed_lines: list[str] = field(default_factory=list)  # lines removed (from diff)
+    deleted_files: list[str] = field(default_factory=list)  # files deleted in this commit
+    added_files: list[str] = field(default_factory=list)  # files added in this commit
+    file_contents: dict[str, str] = field(default_factory=dict)  # file_path -> content at commit
+
     # Repo context
+    repo_path: str = ""  # path to git repo (for rules that need git access)
     repo_name: str = ""
     default_branch: str = "main"
     is_direct_push: bool = False  # True if pushing directly to default branch
