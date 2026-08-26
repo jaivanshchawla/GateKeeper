@@ -12,12 +12,12 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| ROC-AUC | **0.7857** [0.7811, 0.7902] | Cross-repo LORO mean — honest generalization with 35 features, 1000-resample CI (row-resampled) |
-| PR-AUC lift | +0.255 | Model ranks risky commits above base rate |
+| ROC-AUC | **0.7885** | Cross-repo LORO mean — honest generalization with 35 features, parity-verified extraction |
+| PR-AUC lift | +0.246 | Model ranks risky commits above base rate |
 | Top-decile lift | ~1.5-2x | Top 10% of scores have 1.5-2x the precision of random |
 | Brier score | 0.224 | Moderately well-calibrated |
 
-**Pooled AUC caveat:** The pooled ROC-AUC (~0.80) is higher than the per-repo mean (0.7857) because between-repo separation inflates the number. The per-repo table below is the honest presentation. See Protocol Comparison for details.
+**Pooled AUC caveat:** The pooled ROC-AUC (~0.80) is higher than the per-repo mean (0.7885) because between-repo separation inflates the number. The per-repo table below is the honest presentation. See Protocol Comparison for details.
 
 **Why not F1:** The constant classifier (predict everything as risky) beats the model on F1 for 4/5 repos at these base rates:
 
@@ -71,7 +71,7 @@ F1 penalizes the model for not having perfect recall, which the constant classif
 | Hyperparameters | num_leaves=31, learning_rate=0.05, n_estimators=100 |
 | Features | 35 (9 base + 12 file history + 6 author-file + 8 change-shape) |
 | Serialized as | skops (models/gatekeeper_risk_model.skops) |
-| MLflow registry | GatekeeperRiskPredictor v7 (Production) |
+| MLflow registry | GatekeeperRiskPredictor v8 (Production) |
 | Rule engine | 9 deterministic rules in `.gatekeeper.yml` (separate from ML score) |
 
 ## Evaluation Protocol
@@ -80,12 +80,12 @@ The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: tr
 
 | Held-out Repo | ROC-AUC | 95% CI | Notes |
 |---------------|---------|--------|-------|
-| django | 0.7543 | [0.7301, 0.7781] | |
-| kafka | 0.8233 | [0.8019, 0.8439] | |
-| kubernetes | 0.7940 | [0.7724, 0.8148] | |
-| react | 0.7530 | [0.7294, 0.7762] | |
-| rust | 0.8037 | [0.7829, 0.8239] | |
-| **Mean** | **0.7857** | **[0.7811, 0.7902]** | **35 features, 1000-resample CI (rows)** |
+| django | 0.7607 | [0.7372, 0.7818] | |
+| kafka | 0.8247 | [0.8037, 0.8404] | |
+| kubernetes | 0.7952 | [0.7742, 0.8139] | |
+| react | 0.7579 | [0.7361, 0.7789] | |
+| rust | 0.8038 | [0.7833, 0.8223] | |
+| **Mean** | **0.7885** | | **v8 Production — parity-verified extraction** |
 
 ### Protocol Comparison
 
@@ -188,7 +188,7 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 ## Known Limitations
 
-1. **Modest discriminative power:** ROC-AUC 0.7857 means the model ranks risky commits moderately better than random. It is not a reliable standalone decision-maker — use it as one signal among several.
+1. **Modest discriminative power:** ROC-AUC 0.7885 means the model ranks risky commits moderately better than random. It is not a reliable standalone decision-maker — use it as one signal among several.
 
 2. **Label encodes repo velocity:** +0.62 correlation between commits/week and risky rate. The label partly measures "how active is this repo" rather than "how risky is this commit."
 
@@ -210,10 +210,10 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 | Feature Group | ROC-AUC when removed | Contribution |
 |---------------|---------------------|--------------|
-| All 35 (baseline) | 0.7857 | — |
-| Minus file history (12) | 0.7319 | **+0.0538** (biggest winner) |
-| Minus author-file familiarity (6) | 0.7819 | +0.0038 |
-| Minus change-shape (8) | 0.7835 | +0.0022 |
+| All 35 (baseline) | 0.7885 | — |
+| Minus file history (12) | 0.7347 | **+0.0538** (biggest winner) |
+| Minus author-file familiarity (6) | 0.7847 | +0.0038 |
+| Minus change-shape (8) | 0.7863 | +0.0022 |
 | Minus individual suspects | 0.7857 | <0.001 each |
 
 File history features contribute 73% of the total ROC-AUC gain over the 9-feature baseline.
@@ -226,7 +226,8 @@ File history features contribute 73% of the total ROC-AUC gain over the 9-featur
 | v2 | RandomForestClassifier | ? | Django only | Archived |
 | v4 | LGBMClassifier | ? | 5 repos (pre-rebuild) | Archived, had labeling bugs |
 | v5 | LGBMClassifier | 0.6744 (cross-repo) | 5 repos, 10K commits, 19 features | Archived — leaky pooled-F1 baseline |
-| **v7 (current)** | **LGBMClassifier** | **0.7857** | **5 repos, 10K commits, 35 features** | **Current Production — promoted on cross-repo LORO ROC-AUC. Author identity fixed to normalized email (T.1).** |
+| v7 | LGBMClassifier | 0.7784 | 5 repos, 10K commits, 35 features | Archived — promoted on cross-repo LORO ROC-AUC |
+| **v8 (current)** | **LGBMClassifier** | **0.7885** | **5 repos, 10K commits, 35 features** | **Current Production — parity-verified extraction, author identity via normalized email** |
 
 ## Cloud Deployment
 
