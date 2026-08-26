@@ -84,12 +84,14 @@ def compute_single_commit_m1_features(
     # CRITICAL: Use graph file paths and author, NOT PyDriller's.
     # PyDriller and git log can produce different paths/names.
     # Bulk extraction uses graph paths, so SC must too.
+    graph_author_used = author_name
     if target_info:
         graph_files = target_info.get("files", set())
         graph_author = target_info.get("author", author_name)
         if graph_files:
             touched_files = graph_files
         author_name = graph_author
+        graph_author_used = graph_author
 
     # Compute M.1 features using the shared function
     m1 = compute_m1_features(
@@ -118,5 +120,8 @@ def compute_single_commit_m1_features(
     # Remove co-change features (not in current config)
     result.pop("co_change_strength_max", None)
     result.pop("co_change_strength_mean", None)
+
+    # Return graph author so extract_single_commit can override PyDriller's email
+    result["_graph_author"] = graph_author_used
 
     return result

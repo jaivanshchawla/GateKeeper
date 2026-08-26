@@ -6,6 +6,7 @@ Extracts per-commit metrics using PyDriller and labels risky commits.
 
 import argparse
 import os
+import unicodedata
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -95,7 +96,10 @@ class CommitFeatureExtractor:
         # Author's total prior commit count
         # Use .get() — count_authors_before uses --before which excludes
         # the commit itself, so first-time authors won't be in the dict.
-        author_name = commit.author.name
+        # Key on NORMALIZED EMAIL, not display name — emails are stable,
+        # display names vary ("Lauren Tan" vs "lauren").
+        author_email = commit.author.email or commit.author.name
+        author_name = self._normalize_author(author_email)
         author_prior_commits = self.author_prior_counts.get(author_name, 0)
 
         # Temporal features — committer_date, normalized to UTC
@@ -118,7 +122,7 @@ class CommitFeatureExtractor:
 
         return {
             "hash": commit.hash,
-            "author": author_name,
+            "author": author_name,  # normalized email
             "date": commit.committer_date,
             "lines_added": lines_added,
             "lines_deleted": lines_deleted,
@@ -239,7 +243,9 @@ class CommitFeatureExtractor:
         # SC must compute the same value.
         if not self.author_prior_counts:
             from ml.m1_shared import count_authors_before
-            self.author_prior_counts = count_authors_before(repo_path, commit_iso)
+            counts = count_authors_before(repo_path, commit_iso)
+            # Convert to defaultdict(int) so += 1 works for new authors
+            self.author_prior_counts = defaultdict(int, counts)
 
         # Step 3: Use PyDriller to get the specific commit (for base features)
         repository = Repository(repo_path, single=commit_hash)
@@ -283,6 +289,28 @@ class CommitFeatureExtractor:
                     since_date=self.since,
                 )
                 features.update(m1)
+
+                # Override author and author_prior_commits with graph values.
+                # PyDriller and git log can report different emails for the
+                # same commit (e.g. tg@trevorgross.com vs tmgross@umich.edu).
+                # The CSV and count_authors_before use git's email, so SC must too.
+                graph_author = m1.get('_graph_author', features.get('author', ''))
+                if graph_author:
+                    features['author'] = graph_author
+                    # _extract_features_from_commit already incremented the count
+                    # for PyDriller's email. We need the count for the graph
+                    # email BEFORE this commit was counted. Since
+                    # count_authors_before uses --before (exclusive), the count
+                    # for the graph email is correct as-is IF PyDriller's email
+                    # != graph author (increment went to a different key).
+                    # If they match, the increment made it +1 too high.
+                    pydriller_author = self._normalize_author(
+                        commit.author.email or commit.author.name
+                    )
+                    raw_count = self.author_prior_counts.get(graph_author, 0)
+                    if graph_author == pydriller_author:
+                        raw_count -= 1  # undo the increment from _extract
+                    features['author_prior_commits'] = max(0, raw_count)
             except Exception as e:
                 import warnings
                 warnings.warn(f"M.1 feature computation failed: {e}", stacklevel=2)
@@ -290,6 +318,23 @@ class CommitFeatureExtractor:
             return features
 
         raise ValueError(f"Commit {commit_hash} not found in repository")
+
+    @staticmethod
+    def _normalize_author(identifier: str) -> str:
+        """Normalize author identifier: NFKD, strip combining marks, casefold.
+
+        Uses the shared logic from ml/m1_shared.py for consistency.
+        Falls back to inline implementation if import fails (e.g., during
+        initial extraction before m1_shared is available).
+        """
+        if not identifier:
+            return ""
+        try:
+            from ml.m1_shared import normalize_author_id
+            return normalize_author_id(identifier)
+        except ImportError:
+            nfkd = unicodedata.normalize("NFKD", identifier)
+            return "".join(c for c in nfkd if unicodedata.category(c) != "Mn").casefold()
 
     def extract_and_save(self, output_path: str) -> pd.DataFrame:
         """

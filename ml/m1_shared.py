@@ -9,9 +9,26 @@ this module eliminates that by providing exactly one implementation.
 """
 
 import subprocess
+import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def normalize_author_id(identifier: str) -> str:
+    """Normalize author identifier (email preferred, name fallback).
+
+    Uses NFKD normalization, strips combining marks, casefolds.
+    Applied identically in both bulk and single-commit paths.
+    Keyed on email, not display name — emails are stable across
+    git config changes and noreply addresses.
+    """
+    if not identifier:
+        return ""
+    # NFKD normalize, strip combining marks (accents), casefold
+    nfkd = unicodedata.normalize("NFKD", identifier)
+    stripped = "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+    return stripped.casefold()
 
 
 def build_graph(repo_path: str, since: str, until: str) -> dict:
@@ -20,7 +37,10 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
     Returns: {hash: {date: datetime(naive UTC), files: [str], subject: str,
                       author: str, is_merge: bool}}
     """
-    fmt = "%H|%ct|%an|%s"
+    # Use %aE (email) instead of %aN (name) — emails are stable,
+    # display names are not ("Esteban Küber" vs "Esteban Kuber",
+    # "Lauren Tan" vs "lauren").
+    fmt = "%H|%ct|%aE|%s"
     result = subprocess.run(
         ["git", "log", f"--since={since}", f"--until={until}",
          f"--pretty=format:{fmt}", "--name-only", "--no-merges", "HEAD"],
@@ -45,7 +65,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
                     "date": datetime.fromtimestamp(ct, tz=timezone.utc).replace(tzinfo=None),
                     "files": cf, "subject": cs, "author": ca, "is_merge": False,
                 }
-            ch, ct, ca, cs = parts[0], int(parts[1]), parts[2], parts[3]
+            ch, ct, ca, cs = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
             cf = []
         else:
             cf.append(line)
@@ -66,7 +86,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
             continue
         parts = line.split("|", 3)
         if len(parts) == 4 and len(parts[0]) == 40:
-            mh, mt, ma, ms = parts[0], int(parts[1]), parts[2], parts[3]
+            mh, mt, ma, ms = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
             if mh in graph:
                 graph[mh]["is_merge"] = True
             else:
@@ -114,17 +134,16 @@ def compute_risky_hashes(graph: dict, label_window_days: int = 7) -> set[str]:
 
 
 def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
-    """Count commits per author before a given date.
+    """Count commits per author (normalized email) before a given date.
 
     Used by both bulk (before window start) and SC (before commit date).
     Accepts either a date string (YYYY-MM-DD) or ISO-8601 timestamp.
     Uses --before (not --until) so ISO-8601 timestamps preserve the
     exact time, avoiding midnight truncation.
+    Keyed on normalized email (%aE), not display name (%aN).
     """
-    # Use --before instead of --until to avoid midnight truncation.
-    # --before with ISO-8601 preserves exact time; --until truncates to midnight.
     result = subprocess.run(
-        ["git", "log", f"--before={before_date}", "--format=%aN",
+        ["git", "log", f"--before={before_date}", "--format=%aE",
          "--no-merges", "HEAD"],
         cwd=repo_path, capture_output=True, text=True, timeout=300,
     )
@@ -132,7 +151,7 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
     for line in result.stdout.strip().split("\n"):
         line = line.strip()
         if line:
-            counts[line] += 1
+            counts[normalize_author_id(line)] += 1
     return dict(counts)
 
 

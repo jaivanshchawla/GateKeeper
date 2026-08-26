@@ -43,8 +43,11 @@ def run_git(repo_path: str, args: list[str], timeout: int = 600) -> str:
 
 
 def build_graph(repo_path: str, since: str, until: str) -> dict:
-    """Build commit graph with file paths, author, dates, merge info."""
-    fmt = "%H|%ct|%an|%s"
+    """Build commit graph with file paths, author (normalized email), dates, merge info."""
+    # Use %aE (email) instead of %aN (name) — emails are stable,
+    # display names vary. Normalized via normalize_author_id.
+    from ml.m1_shared import normalize_author_id
+    fmt = "%H|%ct|%aE|%s"
     stdout = run_git(repo_path, ["log", f"--since={since}", f"--until={until}",
                                   f"--pretty=format:{fmt}", "--name-only", "--no-merges", "HEAD"])
     graph = {}
@@ -62,7 +65,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
             if ch is not None:
                 graph[ch] = {"date": datetime.fromtimestamp(ct, tz=timezone.utc).replace(tzinfo=None),
                              "files": cf, "subject": cs, "author": ca, "is_merge": False}
-            ch, ct, ca, cs = parts[0], int(parts[1]), parts[2], parts[3]
+            ch, ct, ca, cs = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
             cf = []
         else:
             cf.append(line)
@@ -71,7 +74,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
                       "files": cf, "subject": cs, "author": ca, "is_merge": False}
 
     # Merge commits — batch in a single git log call (avoids 24K individual calls for Rust)
-    merge_fmt = "%H|%ct|%an|%s"
+    merge_fmt = "%H|%ct|%aE|%s"
     merge_stdout = run_git(repo_path, ["log", f"--since={since}", f"--until={until}",
                                         f"--pretty=format:{merge_fmt}", "--merges", "HEAD"])
     for line in merge_stdout.strip().split("\n"):
@@ -79,7 +82,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
             continue
         parts = line.split("|", 3)
         if len(parts) == 4 and len(parts[0]) == 40:
-            mh, mt, ma, ms = parts[0], int(parts[1]), parts[2], parts[3]
+            mh, mt, ma, ms = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
             if mh in graph:
                 graph[mh]["is_merge"] = True
             else:

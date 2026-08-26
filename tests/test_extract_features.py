@@ -23,6 +23,7 @@ from ml.extract_features import CommitFeatureExtractor
 def create_mock_commit(
     hash: str = "abc123",
     author_name: str = "TestAuthor",
+    author_email: str = None,
     author_date: datetime = None,
     committer_date: datetime = None,
     insertions: int = 10,
@@ -36,6 +37,8 @@ def create_mock_commit(
         author_date = datetime(2024, 1, 15, 10, 30, 0)
     if committer_date is None:
         committer_date = author_date
+    if author_email is None:
+        author_email = f"{author_name.lower()}@example.com"
 
     if modified_files is None:
         modified_files = [
@@ -54,7 +57,7 @@ def create_mock_commit(
 
     return SimpleNamespace(
         hash=hash,
-        author=SimpleNamespace(name=author_name),
+        author=SimpleNamespace(name=author_name, email=author_email),
         author_date=author_date,
         committer_date=committer_date,
         insertions=insertions,
@@ -362,26 +365,27 @@ class TestCommitFeatureExtractor:
         import subprocess
 
         def mock_subprocess_run(cmd, **kwargs):
+            cmd_str = " ".join(cmd)
             # git log -1 --format=%ct <hash> -> return commit timestamp
-            if "--format=%ct" in " ".join(cmd):
+            if "--format=%ct" in cmd_str:
                 result = mock.MagicMock()
                 result.stdout = "1700000000"
                 result.returncode = 0
                 return result
-            # git log --until=<date> --format=%aN -> return author counts
-            if "--format=%aN" in " ".join(cmd):
+            # git log --before=<date> --format=%aE -> return author counts (email)
+            if "--format=%aE" in cmd_str and "--before" in cmd_str:
                 result = mock.MagicMock()
-                result.stdout = "Tester\nTester\nOther"
+                result.stdout = "tester@example.com\ntester@example.com\nother@example.com"
                 result.returncode = 0
                 return result
-            # git log --name-only -> return file paths for graph
-            if "--name-only" in cmd:
+            # git log --name-only -> return file paths for graph (uses %aE now)
+            if "--name-only" in cmd_str:
                 result = mock.MagicMock()
-                result.stdout = "deadbeef123|1700000000|Tester|Update implementation\nsrc/file1.py\nsrc/file2.py\n"
+                result.stdout = "deadbeef123|1700000000|tester@example.com|Update implementation\nsrc/file1.py\nsrc/file2.py\n"
                 result.returncode = 0
                 return result
             # git log --merges -> empty
-            if "--merges" in cmd:
+            if "--merges" in cmd_str:
                 result = mock.MagicMock()
                 result.stdout = ""
                 result.returncode = 0
@@ -403,6 +407,7 @@ class TestCommitFeatureExtractor:
             assert isinstance(result, dict)
             assert result["hash"] == "deadbeef123"
             assert result["lines_added"] == 25
-            assert result["author"] == "Tester"
+            # Author is now normalized email, not display name
+            assert "tester@example.com" in result["author"]
             # commit_msg should be removed
             assert "commit_msg" not in result
