@@ -117,28 +117,53 @@ class RealizedOutcome:
 
 
 class OutcomeDB:
-    """Outcome database: Postgres via SQLAlchemy when available, SQLite fallback."""
+    """Outcome database.
+
+    Backend selection is EXPLICIT, never silent:
+    - OUTCOME_BACKEND=postgres: use Postgres, fail if unreachable
+    - OUTCOME_BACKEND=sqlite: use SQLite
+    - DATABASE_URL set, OUTCOME_BACKEND unset: use Postgres (fail if unreachable)
+    - Neither set: use SQLite (local dev only)
+    """
 
     def __init__(self, db_path: str | Path | None = None):
-        # Try Postgres first
-        self.use_postgres = False
-        self.Session = None
-        try:
-            from webhook.models import Commit, Repo, engine, SessionLocal
-            from sqlalchemy import inspect
-            # Check if tables exist
-            inspector = inspect(engine)
-            tables = inspector.get_table_names()
-            if "commits" in tables:
-                self.use_postgres = True
-                self.Session = SessionLocal
-                self.Commit = Commit
-                self.Repo = Repo
-                return
-        except Exception:
-            pass
+        backend = os.environ.get("OUTCOME_BACKEND", "")
+        db_url = os.environ.get("DATABASE_URL", "")
 
-        # SQLite fallback
+        # Determine backend
+        if backend == "postgres" or (not backend and db_url):
+            # Postgres REQUIRED — fail loudly if unreachable
+            self.use_postgres = False
+            self.Session = None
+            try:
+                from webhook.models import Commit, Repo, engine, SessionLocal
+                from sqlalchemy import inspect
+                inspector = inspect(engine)
+                tables = inspector.get_table_names()
+                if "commits" in tables:
+                    self.use_postgres = True
+                    self.Session = SessionLocal
+                    self.Commit = Commit
+                    self.Repo = Repo
+                    return
+                else:
+                    raise RuntimeError(
+                        f"OUTCOME_BACKEND=postgres but 'commits' table not found. "
+                        f"Available tables: {tables}. Run 'python -m webhook.models' to initialize."
+                    )
+            except Exception as e:
+                raise RuntimeError(
+                    f"OUTCOME_BACKEND=postgres but Postgres is unreachable: {e}. "
+                    f"Set OUTCOME_BACKEND=sqlite for local dev, or fix DATABASE_URL."
+                )
+        elif backend == "sqlite" or (not backend and not db_url):
+            # SQLite — explicit or local dev
+            pass
+        else:
+            raise ValueError(f"Unknown OUTCOME_BACKEND: {backend!r}. Use 'postgres' or 'sqlite'.")
+
+        # SQLite backend
+        self.use_postgres = False
         if db_path is None:
             db_path = os.path.join(os.path.dirname(__file__), "..", "data", "outcomes.db")
         self.db_path = str(db_path)
