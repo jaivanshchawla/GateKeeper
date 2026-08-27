@@ -366,8 +366,26 @@ class TestCommitFeatureExtractor:
 
         def mock_subprocess_run(cmd, **kwargs):
             cmd_str = " ".join(cmd)
-            # git log -1 --format=%ct <hash> -> return commit timestamp
-            if "--format=%ct" in cmd_str:
+            # git log -1 --format=%ct|%aE|%s -> return metadata
+            if "--format=%ct|%aE|%s" in cmd_str:
+                result = mock.MagicMock()
+                result.stdout = "1700000000|tester@example.com|Update implementation"
+                result.returncode = 0
+                return result
+            # git log -1 --format=%B -> return full message
+            if "--format=%B" in cmd_str:
+                result = mock.MagicMock()
+                result.stdout = "Update implementation"
+                result.returncode = 0
+                return result
+            # git diff-tree --numstat -> return line counts
+            if "--numstat" in cmd_str:
+                result = mock.MagicMock()
+                result.stdout = "25\t5\tsrc/file1.py\n10\t3\tsrc/file2.py\n"
+                result.returncode = 0
+                return result
+            # git log -1 --format=%ct (old path, for commit date)
+            if "--format=%ct" in cmd_str and "|" not in cmd_str:
                 result = mock.MagicMock()
                 result.stdout = "1700000000"
                 result.returncode = 0
@@ -390,6 +408,12 @@ class TestCommitFeatureExtractor:
                 result.stdout = ""
                 result.returncode = 0
                 return result
+            # git rev-parse HEAD -> return fake HEAD
+            if "rev-parse" in cmd_str:
+                result = mock.MagicMock()
+                result.stdout = "abc123def456"
+                result.returncode = 0
+                return result
             # Default
             result = mock.MagicMock()
             result.stdout = ""
@@ -406,7 +430,7 @@ class TestCommitFeatureExtractor:
 
             assert isinstance(result, dict)
             assert result["hash"] == "deadbeef123"
-            assert result["lines_added"] == 25
+            assert result["lines_added"] == 35  # 25 + 10 from two files in mock numstat
             # Author is now normalized email, not display name
             assert "tester@example.com" in result["author"]
             # commit_msg should be removed
