@@ -12,10 +12,13 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| ROC-AUC | **0.7885** | Cross-repo LORO mean — honest generalization with 35 features, parity-verified extraction |
+| ROC-AUC (cross-repo LORO) | **0.7885** | Generalization to unseen repos within the training time window |
+| ROC-AUC (out-of-window) | **0.7166** | Generalization to commits AFTER the training window — what users actually experience |
 | PR-AUC lift | +0.246 | Model ranks risky commits above base rate |
 | Top-decile lift | ~1.5-2x | Top 10% of scores have 1.5-2x the precision of random |
 | Brier score | 0.224 | Moderately well-calibrated |
+
+**Two numbers, not one:** The cross-repo LORO (0.7885) tests generalization to unseen repos within the same time window. The out-of-window ROC-AUC (0.7166) tests generalization to future commits — what a user actually experiences when they install Gatekeeper today. The gap is real and documented below.
 
 **Pooled AUC caveat:** The pooled ROC-AUC (~0.80) is higher than the per-repo mean (0.7885) because between-repo separation inflates the number. The per-repo table below is the honest presentation. See Protocol Comparison for details.
 
@@ -87,12 +90,34 @@ The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: tr
 | rust | 0.8038 | [0.7833, 0.8223] | |
 | **Mean** | **0.7885** | | **v8 Production — parity-verified extraction** |
 
+### Out-of-Window Evaluation (Y.1)
+
+The most honest metric: test on commits whose committer_date is AFTER the training window end (2026-06-30). These commits were never seen during training or evaluation.
+
+| Repo | N (OOW) | Base Rate | OOW ROC-AUC | 95% CI | Offline LORO | Gap |
+|------|---------|-----------|------------|--------|-------------|-----|
+| django | 145 | 39.3% | 0.7547 | [0.6715, 0.8313] | 0.7607 | -0.006 |
+| kafka | 100 | 36.0% | 0.7363 | [0.6823, 0.7874] | 0.8247 | -0.088 |
+| kubernetes | 100 | 49.0% | 0.8812 | [0.8319, 0.9240] | 0.7952 | +0.086 |
+| rust | 390 | 51.3% | 0.7237 | [0.6725, 0.7701] | 0.8038 | -0.080 |
+| react | 102 | 52.0% | **0.5542** | [0.4300, 0.6740] | 0.7579 | **-0.204** |
+| **Mean** | | | **0.7300** | | 0.7885 | **-0.059** |
+
+**Key findings:**
+- **Mean OOW ROC-AUC is 0.730 vs 0.7885 LORO** — a 0.059 gap from temporal drift alone.
+- **React is broken out-of-window** (0.5542, CI includes 0.5 = no signal). React's codebase and contributor patterns shifted enough post-training that the model cannot generalize.
+- **Kubernetes OOW exceeds LORO** (0.8812 vs 0.7952) — likely because k8s's high commit density makes the ranking task easier on recent commits.
+- **Django has too few OOW commits** (145, CI width ±0.08) for precise measurement.
+
+The OOW number is the honest production figure. The LORO number is the evaluation metric. Both should be reported.
+
 ### Protocol Comparison
 
 | Protocol | ROC-AUC | Notes |
 |----------|---------|-------|
 | Pooled random 80/20 | ~0.80 | **Inflated** — see below |
-| Cross-repo LORO | **0.7784** | Honest: tests generalization to unseen repos |
+| Cross-repo LORO | **0.7885** | Generalization to unseen repos, same time window |
+| Out-of-window | **0.7300** | Generalization to future commits — what users experience |
 
 **Why pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The per-repo AUCs range from 0.738 to 0.810, but the pooled number (0.80) sits above three of five repos. The honest headline is the per-repo table and its mean, not the pooled figure. Additionally, temporally adjacent commits from the same author land on both sides of a random split, and `author_prior_commits` is a running counter — creating leakage that cross-repo LORO avoids entirely.
 
@@ -220,7 +245,7 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 6. **Calibration gaps:** 10-bin reliability analysis shows overconfidence in mid-range bins (predicted probabilities systematically higher than observed frequencies for rust, lower for react).
 
-7. **Temporal drift:** Code review practices, CI/CD tooling, and contributor behavior evolve. The model was trained on a 2-year window and may not capture recent shifts.
+7. **Temporal drift (Y.1 measured):** Mean out-of-window ROC-AUC is 0.730 vs 0.7885 LORO — a 0.059 gap. React is severely affected (0.5542 OOW, CI includes 0.5). The U.4 feedback loop with retraining triggers is the intended mitigation, but has not yet been validated end-to-end.
 
 8. **Pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The pooled ROC-AUC (~0.80) sits above three of five per-repo AUCs. The per-repo table is the honest presentation.
 
