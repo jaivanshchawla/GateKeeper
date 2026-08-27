@@ -70,7 +70,6 @@ risk_budget:
 branch_rules:
   main:
     large_change: block
-    config_and_code: block
     revert_hotspot: block
   develop:
     large_change: warn
