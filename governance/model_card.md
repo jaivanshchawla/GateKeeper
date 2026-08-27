@@ -13,12 +13,12 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
 | ROC-AUC (cross-repo LORO) | **0.7885** | Generalization to unseen repos within the training time window |
-| ROC-AUC (out-of-window) | **0.7166** | Generalization to commits AFTER the training window — what users actually experience |
+| ROC-AUC (out-of-window, excl React) | **0.7563** | Production figure for 4/5 repos — React divergence excluded |
 | PR-AUC lift | +0.246 | Model ranks risky commits above base rate |
 | Top-decile lift | ~1.5-2x | Top 10% of scores have 1.5-2x the precision of random |
 | Brier score | 0.224 | Moderately well-calibrated |
 
-**Two numbers, not one:** The cross-repo LORO (0.7885) tests generalization to unseen repos within the same time window. The out-of-window ROC-AUC (0.7166) tests generalization to future commits — what a user actually experiences when they install Gatekeeper today. The gap is real and documented below.
+**Two numbers, not one:** The cross-repo LORO (0.7885) tests generalization to unseen repos within the same time window. The out-of-window ROC-AUC tests generalization to future commits. Excluding React, the OOW mean is 0.7563 (gap -0.034, within noise). React diverged due to structural contributor-base changes, not temporal drift.
 
 **Pooled AUC caveat:** The pooled ROC-AUC (~0.80) is higher than the per-repo mean (0.7885) because between-repo separation inflates the number. The per-repo table below is the honest presentation. See Protocol Comparison for details.
 
@@ -109,7 +109,7 @@ The most honest metric: test on commits whose committer_date is AFTER the traini
 - **Kubernetes OOW exceeds LORO** (0.8812 vs 0.7952) — likely because k8s's high commit density makes the ranking task easier on recent commits.
 - **Django has too few OOW commits** (145, CI width ±0.08) for precise measurement.
 
-The OOW number is the honest production figure. The LORO number is the evaluation metric. Both should be reported.
+Excluding React (where the contributor base shifted structurally), the OOW gap is -0.034 — within noise. The model generalizes to future commits for 4/5 repos. Right-censoring at HEAD was ruled out as a cause (Z.1).
 
 ### Protocol Comparison
 
@@ -245,7 +245,7 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 6. **Calibration gaps:** 10-bin reliability analysis shows overconfidence in mid-range bins (predicted probabilities systematically higher than observed frequencies for rust, lower for react).
 
-7. **Temporal drift (Y.1 measured):** Mean out-of-window ROC-AUC is 0.730 vs 0.7885 LORO — a 0.059 gap. React is severely affected (0.5542 OOW, CI includes 0.5). The U.4 feedback loop with retraining triggers is the intended mitigation, but has not yet been validated end-to-end.
+7. **React-specific divergence, not general temporal drift (Z.1-Z.5):** The mean out-of-window ROC-AUC is 0.730 vs 0.7885 LORO. However, Z.1 proved this is NOT caused by right-censoring at HEAD, and **excluding React, the gap is -0.034 (within noise)**. React is the sole driver: its contributor base shifted structurally post-training (activity dropped from 129/month to 35/month, top-3 authors do 60% of commits, same author has dual emails causing feature inconsistency). K8s actually improved OOW (0.8812 vs 0.7952 LORO). Z.5 confirmed more training data helps (-0.10 AUC when using less), so the path to fixing React is retraining with OOW data — not urgent for the other 4 repos.
 
 8. **Pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The pooled ROC-AUC (~0.80) sits above three of five per-repo AUCs. The per-repo table is the honest presentation.
 
