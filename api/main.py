@@ -7,8 +7,12 @@ Provides prediction endpoint for commit risk assessment.
 import os
 from contextlib import asynccontextmanager
 
-import mlflow
-import mlflow.pyfunc
+try:
+    import mlflow
+    import mlflow.pyfunc
+except ImportError:
+    mlflow = None
+    mlflow_pyfunc = None
 import numpy as np
 import skops.io as sio
 import yaml
@@ -175,15 +179,16 @@ def _load_model():
             print(f"Standalone load failed: {e}")
 
     # Local dev: try MLflow Model Registry first
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
-    mlflow.set_tracking_uri(tracking_uri)
-    try:
-        model_uri = "models:/GatekeeperRiskPredictor/latest"
-        model = mlflow.pyfunc.load_model(model_uri)
-        print("Loaded model from MLflow Model Registry")
-        return
-    except Exception as e:
-        print(f"Model Registry load failed: {e}")
+    if mlflow is not None:
+        tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+        mlflow.set_tracking_uri(tracking_uri)
+        try:
+            model_uri = "models:/GatekeeperRiskPredictor/latest"
+            model = mlflow.pyfunc.load_model(model_uri)
+            print("Loaded model from MLflow Model Registry")
+            return
+        except Exception as e:
+            print(f"Model Registry load failed: {e}")
 
     # Fallback: standalone file (even if mlflow.db exists)
     if model is None and os.path.exists(standalone_path):

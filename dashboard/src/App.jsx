@@ -1,24 +1,23 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
 
-const API_URL = import.meta.env.VITE_API_URL || '/api'
+const API = import.meta.env.VITE_API_URL || '/api'
+const BAND_COLORS = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' }
+const BAND_BG = { high: 'rgba(239,68,68,0.12)', medium: 'rgba(245,158,11,0.12)', low: 'rgba(34,197,94,0.12)' }
+const BAND_DISPLAY = { high: 'HIGH RISK', medium: 'ELEVATED', low: 'NOT FLAGGED' }
 
-const COLORS = { low: '#00f2fe', medium: '#ffa726', high: '#f5576c' }
-const PIE_COLORS = ['#00f2fe', '#ffa726', '#f5576c']
-
-// ── API helpers ──────────────────────────────────────────────────────
-
+// ── API helpers ──────────────────────────────────────────────
 async function api(path) {
-  const r = await fetch(`${API_URL}${path}`)
+  const r = await fetch(`${API}${path}`)
   if (!r.ok) throw new Error(`API ${r.status}: ${r.statusText}`)
   return r.json()
 }
-
 async function apiPost(path, body) {
-  const r = await fetch(`${API_URL}${path}`, {
+  const r = await fetch(`${API}${path}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
@@ -26,47 +25,55 @@ async function apiPost(path, body) {
   return r.json()
 }
 
-async function apiPatch(path) {
-  const r = await fetch(`${API_URL}${path}`, { method: 'PATCH' })
-  if (!r.ok) throw new Error(`API ${r.status}: ${r.statusText}`)
-  return r.json()
+// ── Shared components ────────────────────────────────────────
+function BandBadge({ band, size = 'sm' }) {
+  return <span className={`status-badge ${band}`}>{BAND_DISPLAY[band] || band}</span>
 }
 
-// ── Components ───────────────────────────────────────────────────────
+function StatCard({ value, label, risk }) {
+  const cls = risk ? `stat-card risk-${risk}` : 'stat-card'
+  return <div className={cls}><h3>{value}</h3><p>{label}</p></div>
+}
 
-function RepoList({ onSelect, onBack }) {
+function Loading() { return <div className="loading">Loading...</div> }
+function Empty({ text }) { return <div className="empty-state"><h3>{text}</h3></div> }
+
+// ── 1. Overview ──────────────────────────────────────────────
+function OverviewView({ onSelectRepo }) {
   const [repos, setRepos] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    api('/repos').then(setRepos).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+  useEffect(() => { api('/repos').then(setRepos).catch(() => {}).finally(() => setLoading(false)) }, [])
+  if (loading) return <Loading />
 
-  if (loading) return <div className="loading">Loading repos...</div>
+  const totalIssues = repos.reduce((s, r) => s + (r.open_issues || 0), 0)
+  const totalCommits = repos.reduce((s, r) => s + (r.total_commits || 0), 0)
 
   return (
     <div>
-      <div className="header-row">
-        <h1>🛡️ Gatekeeper Dashboard</h1>
-      </div>
+      <h1>Gatekeeper</h1>
       <div className="stats-grid">
-        <div className="stat-card"><h3>{repos.length}</h3><p>Repos</p></div>
-        <div className="stat-card open">
-          <h3>{repos.reduce((s, r) => s + (r.open_issues || 0), 0)}</h3><p>Open Issues</p>
-        </div>
+        <StatCard value={repos.length} label="Repos" />
+        <StatCard value={totalCommits} label="Commits Scored" />
+        <StatCard value={totalIssues} label="Open Issues" risk={totalIssues > 0 ? 'high' : 'low'} />
       </div>
       <div className="card">
         <h2>Repositories</h2>
         <div className="repo-grid">
           {repos.map(repo => (
-            <div key={repo.id} className="repo-card" onClick={() => onSelect(repo.id)}>
+            <div key={repo.id} className="repo-card" onClick={() => onSelectRepo(repo.id)}>
               <h3>{repo.name}</h3>
-              <p className="repo-url">{repo.remote_url || 'no remote'}</p>
+              <div className="repo-url">{repo.remote_url || 'no remote'}</div>
               <div className="repo-stats">
-                <span className={`band-dot ${repo.last_score || 'low'}`} />
-                <span>{repo.open_issues || 0} open issues</span>
+                <BandBadge band={repo.last_score || 'low'} />
+                <span>{repo.open_issues || 0} issues</span>
               </div>
-              <p className="repo-date">Registered: {repo.registered_at?.slice(0, 10)}</p>
+              {repo.risk_trend && (
+                <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-2)' }}>
+                  Trend: {repo.risk_trend}
+                </div>
+              )}
+              <div className="repo-date">Registered {repo.registered_at?.slice(0, 10) || 'unknown'}</div>
             </div>
           ))}
         </div>
@@ -75,44 +82,37 @@ function RepoList({ onSelect, onBack }) {
   )
 }
 
-function RepoDetail({ repoId, onSelectCommit, onBack }) {
+// ── 2. Repo Detail ───────────────────────────────────────────
+function RepoDetailView({ repoId, onSelectCommit, onBack }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    api(`/repos/${repoId}`).then(setData).catch(() => {}).finally(() => setLoading(false))
-  }, [repoId])
-
-  if (loading) return <div className="loading">Loading repo...</div>
+  useEffect(() => { api(`/repos/${repoId}`).then(setData).catch(() => {}).finally(() => setLoading(false)) }, [repoId])
+  if (loading) return <Loading />
   if (!data) return <div className="error">Repo not found</div>
 
   const { repo, commits, band_counts, hotspots, total_commits } = data
-
   const pieData = [
-    { name: 'Low', value: band_counts.low },
-    { name: 'Medium', value: band_counts.medium },
-    { name: 'High', value: band_counts.high },
+    { name: 'Not Flagged', value: band_counts?.low || 0 },
+    { name: 'Elevated', value: band_counts?.medium || 0 },
+    { name: 'High Risk', value: band_counts?.high || 0 },
   ].filter(d => d.value > 0)
+  const pieColors = [BAND_COLORS.low, BAND_COLORS.medium, BAND_COLORS.high]
 
-  // Timeline data (last 20 commits)
-  const timelineData = commits.slice(0, 20).reverse().map(c => ({
-    sha: c.sha?.slice(0, 8),
-    score: c.score,
-    label: c.risk_label,
+  const timelineData = (commits || []).slice(0, 30).reverse().map(c => ({
+    sha: c.sha?.slice(0, 8), score: c.score, band: c.risk_label,
   }))
 
-  // Author breakdown
   const authorMap = {}
-  commits.forEach(c => {
+  ;(commits || []).forEach(c => {
     const a = c.author || 'unknown'
     if (!authorMap[a]) authorMap[a] = { low: 0, medium: 0, high: 0, total: 0 }
     authorMap[a][c.risk_label || 'low']++
     authorMap[a].total++
   })
   const authorData = Object.entries(authorMap)
-    .map(([name, counts]) => ({ name: name.slice(0, 15), ...counts }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10)
+    .map(([name, counts]) => ({ name: name.slice(0, 20), ...counts }))
+    .sort((a, b) => b.total - a.total).slice(0, 10)
 
   return (
     <div>
@@ -120,42 +120,41 @@ function RepoDetail({ repoId, onSelectCommit, onBack }) {
         <button className="back-btn" onClick={onBack}>← Back</button>
         <h1>{repo.name}</h1>
       </div>
-      <p className="repo-detail-url">{repo.remote_url}</p>
+      <div className="repo-url" style={{ marginBottom: 'var(--sp-5)' }}>{repo.remote_url}</div>
 
       <div className="stats-grid">
-        <div className="stat-card"><h3>{total_commits}</h3><p>Total Commits</p></div>
-        <div className="stat-card"><h3>{hotspots?.length || 0}</h3><p>Hotspot Files</p></div>
+        <StatCard value={total_commits || 0} label="Commits Scored" />
+        <StatCard value={hotspots?.length || 0} label="File Hotspots" />
+        <StatCard value={band_counts?.high || 0} label="High Risk" risk="high" />
+        <StatCard value={band_counts?.medium || 0} label="Elevated" risk="med" />
       </div>
 
-      {/* Score Distribution */}
       <div className="card-row">
         <div className="card half">
-          <h2>Score Distribution</h2>
+          <h2>Band Distribution</h2>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label>
-                  {pieData.map((entry, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+                <Pie data={pieData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label>
+                  {pieData.map((_, i) => <Cell key={i} fill={pieColors[i]} />)}
                 </Pie>
-                <Tooltip />
+                <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
         <div className="card half">
-          <h2>Commit Timeline (last 20)</h2>
+          <h2>Score Timeline (last 30)</h2>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={timelineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="sha" stroke="#666" tick={{ fontSize: 10 }} />
-                <YAxis stroke="#666" />
-                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #444' }} />
-                <Bar dataKey="score">
-                  {timelineData.map((d, i) => (
-                    <Cell key={i} fill={COLORS[d.label] || '#666'} />
-                  ))}
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="sha" stroke="var(--text-2)" tick={{ fontSize: 9 }} />
+                <YAxis stroke="var(--text-2)" />
+                <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }} />
+                <Bar dataKey="score" radius={[2, 2, 0, 0]}>
+                  {timelineData.map((d, i) => <Cell key={i} fill={BAND_COLORS[d.band] || 'var(--text-2)'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -163,63 +162,53 @@ function RepoDetail({ repoId, onSelectCommit, onBack }) {
         </div>
       </div>
 
-      {/* File Hotspots */}
-      {hotspots && hotspots.length > 0 && (
+      {hotspots?.length > 0 && (
         <div className="card">
-          <h2>🔥 File Hotspots (by change frequency)</h2>
+          <h2>File Hotspots (by revert count & change frequency)</h2>
           <table>
             <thead><tr><th>File</th><th>Changes</th><th>Authors</th></tr></thead>
             <tbody>
-              {hotspots.map((h, i) => (
-                <tr key={i}>
-                  <td><code>{h.file}</code></td>
-                  <td>{h.changes}</td>
-                  <td>{h.authors}</td>
-                </tr>
+              {hotspots.slice(0, 15).map((h, i) => (
+                <tr key={i}><td><code>{h.file}</code></td><td>{h.changes}</td><td>{h.authors}</td></tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Per-Author View */}
       {authorData.length > 0 && (
         <div className="card">
-          <h2>👥 Commit Activity by Author</h2>
+          <h2>Commit Activity by Author</h2>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={authorData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis type="number" stroke="#666" />
-                <YAxis type="category" dataKey="name" stroke="#666" width={120} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #444' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis type="number" stroke="var(--text-2)" />
+                <YAxis type="category" dataKey="name" stroke="var(--text-2)" width={140} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }} />
                 <Legend />
-                <Bar dataKey="low" stackId="a" fill={COLORS.low} />
-                <Bar dataKey="medium" stackId="a" fill={COLORS.medium} />
-                <Bar dataKey="high" stackId="a" fill={COLORS.high} />
+                <Bar dataKey="low" stackId="a" fill={BAND_COLORS.low} name="Not Flagged" />
+                <Bar dataKey="medium" stackId="a" fill={BAND_COLORS.medium} name="Elevated" />
+                <Bar dataKey="high" stackId="a" fill={BAND_COLORS.high} name="High Risk" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       )}
 
-      {/* Recent Commits Table */}
       <div className="card">
-        <h2>Recent Commits ({commits.length})</h2>
+        <h2>Recent Commits ({(commits || []).length})</h2>
         <table>
-          <thead>
-            <tr><th>SHA</th><th>Author</th><th>Band</th><th>Date</th><th>Details</th></tr>
-          </thead>
+          <thead><tr><th>SHA</th><th>Author</th><th>Band</th><th>Score</th><th>Date</th><th></th></tr></thead>
           <tbody>
-            {commits.map(c => (
+            {(commits || []).slice(0, 50).map(c => (
               <tr key={c.id}>
                 <td><code>{c.sha?.slice(0, 8)}</code></td>
                 <td>{c.author}</td>
-                <td><span className={`status-badge ${c.risk_label || 'low'}`}>{c.risk_label || 'low'}</span></td>
-                <td>{c.timestamp?.slice(0, 10)}</td>
-                <td>
-                  <button className="toggle-btn" onClick={() => onSelectCommit(c.id)}>View</button>
-                </td>
+                <td><BandBadge band={c.risk_label || 'low'} /></td>
+                <td style={{ fontFamily: 'var(--font-mono)' }}>{c.score?.toFixed(4)}</td>
+                <td style={{ color: 'var(--text-2)' }}>{c.timestamp?.slice(0, 10)}</td>
+                <td><button className="toggle-btn" onClick={() => onSelectCommit(c.id)}>Detail</button></td>
               </tr>
             ))}
           </tbody>
@@ -229,40 +218,68 @@ function RepoDetail({ repoId, onSelectCommit, onBack }) {
   )
 }
 
-function CommitDetail({ commitId, onBack }) {
+// ── 3. PR View ───────────────────────────────────────────────
+function PRView() {
+  const [prs, setPrs] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { api('/prs').then(d => setPrs(d.prs || [])).catch(() => {}).finally(() => setLoading(false)) }, [])
+  if (loading) return <Loading />
+  if (!prs.length) return <Empty text="No PRs scored yet" />
+
+  return (
+    <div>
+      <h1>Pull Requests</h1>
+      <div className="card">
+        <table>
+          <thead><tr><th>PR</th><th>Repo</th><th>Verdict</th><th>Commits</th><th>Files</th><th>Riskiest</th><th>Date</th></tr></thead>
+          <tbody>
+            {prs.map(pr => (
+              <tr key={pr.id}>
+                <td><code>#{pr.number}</code></td>
+                <td>{pr.repo}</td>
+                <td><BandBadge band={pr.verdict || 'low'} /></td>
+                <td>{pr.commit_count || 0}</td>
+                <td>{pr.file_count || 0}</td>
+                <td><code>{pr.riskiest_sha?.slice(0, 8) || '-'}</code></td>
+                <td style={{ color: 'var(--text-2)' }}>{pr.created_at?.slice(0, 10)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── 4. Commit Detail ─────────────────────────────────────────
+function CommitDetailView({ commitId, onBack }) {
   const [commit, setCommit] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    api(`/commits/${commitId}`).then(setCommit).catch(() => {}).finally(() => setLoading(false))
-  }, [commitId])
-
-  if (loading) return <div className="loading">Loading commit...</div>
+  useEffect(() => { api(`/commits/${commitId}`).then(setCommit).catch(() => {}).finally(() => setLoading(false)) }, [commitId])
+  if (loading) return <Loading />
   if (!commit) return <div className="error">Commit not found</div>
 
-  let rules = []
+  let rules = [], shap = [], files = []
   try { rules = typeof commit.rule_results === 'string' ? JSON.parse(commit.rule_results) : commit.rule_results || [] } catch {}
-  let shap = []
   try { shap = typeof commit.shap_top3 === 'string' ? JSON.parse(commit.shap_top3) : commit.shap_top3 || [] } catch {}
-  let files = []
   try { files = typeof commit.files_touched === 'string' ? JSON.parse(commit.files_touched) : commit.files_touched || [] } catch {}
 
   return (
     <div>
       <div className="header-row">
         <button className="back-btn" onClick={onBack}>← Back</button>
-        <h1>Commit {commit.sha?.slice(0, 12)}</h1>
+        <h1>Commit <code>{commit.sha?.slice(0, 12)}</code></h1>
       </div>
-
       <div className="stats-grid">
-        <div className="stat-card"><h3>{commit.risk_label?.toUpperCase()}</h3><p>Band</p></div>
-        <div className="stat-card"><h3>{commit.author}</h3><p>Author</p></div>
-        <div className="stat-card"><h3>{commit.lines_added || 0}+ / {commit.lines_deleted || 0}-</h3><p>Lines Changed</p></div>
+        <StatCard value={BAND_DISPLAY[commit.risk_label] || commit.risk_label} label="Band" risk={commit.risk_label === 'high' ? 'high' : commit.risk_label === 'medium' ? 'med' : 'low'} />
+        <StatCard value={commit.author || 'unknown'} label="Author" />
+        <StatCard value={`${commit.lines_added || 0}+ / ${commit.lines_deleted || 0}-`} label="Lines Changed" />
+        <StatCard value={commit.score?.toFixed(4) || '-'} label="Risk Score" />
       </div>
+      {commit.message && <div className="card"><h2>Message</h2><p style={{ color: 'var(--text-1)', fontSize: '0.9rem' }}>{commit.message}</p></div>}
 
-      <p>{commit.message}</p>
-
-      {/* SHAP Explanations */}
       {shap.length > 0 && (
         <div className="card">
           <h2>Top Contributing Factors (SHAP)</h2>
@@ -279,7 +296,6 @@ function CommitDetail({ commitId, onBack }) {
         </div>
       )}
 
-      {/* Rule Results */}
       {rules.length > 0 && (
         <div className="card">
           <h2>Rule Results</h2>
@@ -288,10 +304,10 @@ function CommitDetail({ commitId, onBack }) {
             <tbody>
               {rules.map((r, i) => (
                 <tr key={i}>
-                  <td>{r.rule}</td>
+                  <td><code>{r.rule}</code></td>
                   <td><span className={`sev-badge ${r.severity}`}>{r.severity}</span></td>
-                  <td>{r.passed ? '✅' : '⚠️'}</td>
-                  <td>{r.message}</td>
+                  <td>{r.passed ? '✓' : '✗'}</td>
+                  <td style={{ color: 'var(--text-1)' }}>{r.message}</td>
                 </tr>
               ))}
             </tbody>
@@ -299,177 +315,212 @@ function CommitDetail({ commitId, onBack }) {
         </div>
       )}
 
-      {/* Files */}
       {files.length > 0 && (
         <div className="card">
           <h2>Files Changed ({files.length})</h2>
-          <ul className="file-list">
-            {files.map((f, i) => <li key={i}><code>{f}</code></li>)}
-          </ul>
+          <ul className="file-list">{files.map((f, i) => <li key={i}><code>{f}</code></li>)}</ul>
         </div>
       )}
     </div>
   )
 }
 
-// ── Issues view (existing, kept for compatibility) ───────────────────
+// ── 5. File Detail ───────────────────────────────────────────
+function FileDetailView({ onBack }) {
+  const [search, setSearch] = useState('')
+  const [fileData, setFileData] = useState(null)
+  const [loading, setLoading] = useState(false)
 
-function IssuesView() {
-  const [issues, setIssues] = useState([])
-  const [stats, setStats] = useState({ daily: [], totals: { open: 0, resolved: 0, total: 0 } })
-  const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [repoFilter, setRepoFilter] = useState('')
-  const [repos, setRepos] = useState([])
-
-  const fetchIssues = async () => {
-    const params = new URLSearchParams()
-    if (statusFilter) params.append('status', statusFilter)
-    if (repoFilter) params.append('repo', repoFilter)
-    params.append('limit', '100')
-    const data = await api(`/issues?${params}`)
-    setIssues(data.issues)
-    setRepos([...new Set(data.issues.map(i => i.repo))])
-  }
-
-  const fetchStats = async () => {
-    const data = await api('/issues/stats')
-    setStats(data)
-  }
-
-  const toggleStatus = async (id) => {
-    await apiPatch(`/issues/${id}`)
-    fetchIssues()
-    fetchStats()
-  }
-
-  useEffect(() => {
+  const searchFile = async () => {
+    if (!search) return
     setLoading(true)
-    Promise.all([fetchIssues(), fetchStats()]).finally(() => setLoading(false))
-  }, [statusFilter, repoFilter])
-
-  if (loading) return <div className="loading">Loading...</div>
+    try { const d = await api(`/files/${encodeURIComponent(search)}`); setFileData(d) }
+    catch { setFileData(null) }
+    setLoading(false)
+  }
 
   return (
     <div>
-      <div className="stats-grid">
-        <div className="stat-card"><h3>{stats.totals.total}</h3><p>Total Issues</p></div>
-        <div className="stat-card open"><h3>{stats.totals.open}</h3><p>Open</p></div>
-        <div className="stat-card resolved"><h3>{stats.totals.resolved}</h3><p>Resolved</p></div>
-      </div>
-      <div className="card">
-        <h2>Issues Over Time</h2>
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.daily}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-              <XAxis dataKey="date" stroke="#666" />
-              <YAxis stroke="#666" />
-              <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #444' }} />
-              <Legend />
-              <Line type="monotone" dataKey="open" stroke="#f5576c" strokeWidth={2} />
-              <Line type="monotone" dataKey="resolved" stroke="#00f2fe" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="header-row">
+        <button className="back-btn" onClick={onBack}>← Back</button>
+        <h1>File Detail</h1>
       </div>
       <div className="filters">
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">All Statuses</option>
-          <option value="open">Open</option>
-          <option value="resolved">Resolved</option>
-        </select>
-        <select value={repoFilter} onChange={e => setRepoFilter(e.target.value)}>
-          <option value="">All Repos</option>
-          {repos.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="File path..." style={{ flex: 1 }}
+          onKeyDown={e => e.key === 'Enter' && searchFile()} />
+        <button className="toggle-btn" onClick={searchFile}>Search</button>
       </div>
+      {loading && <Loading />}
+      {fileData && (
+        <div className="card">
+          <h2><code>{fileData.path}</code></h2>
+          <div className="stats-grid">
+            <StatCard value={fileData.total_changes || 0} label="Total Changes" />
+            <StatCard value={fileData.revert_count || 0} label="Reverts" risk={fileData.revert_count > 3 ? 'high' : 'low'} />
+            <StatCard value={fileData.distinct_authors || 0} label="Authors" />
+            <StatCard value={fileData.risk_rate ? (fileData.risk_rate * 100).toFixed(1) + '%' : '-'} label="Risk Rate" />
+          </div>
+          {fileData.history?.length > 0 && (
+            <div>
+              <h2>Change History</h2>
+              <table>
+                <thead><tr><th>SHA</th><th>Author</th><th>Date</th><th>Band</th></tr></thead>
+                <tbody>
+                  {fileData.history.map((h, i) => (
+                    <tr key={i}>
+                      <td><code>{h.sha?.slice(0, 8)}</code></td>
+                      <td>{h.author}</td>
+                      <td style={{ color: 'var(--text-2)' }}>{h.date?.slice(0, 10)}</td>
+                      <td><BandBadge band={h.band || 'low'} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {!fileData && !loading && <Empty text="Search for a file to see its risk history" />}
+    </div>
+  )
+}
+
+// ── 6. Config Editor ─────────────────────────────────────────
+function ConfigEditorView() {
+  const [config, setConfig] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { api('/config').then(setConfig).catch(() => {}).finally(() => setLoading(false)) }, [])
+  if (loading) return <Loading />
+
+  const save = async () => {
+    setSaving(true); setMsg('')
+    try {
+      await apiPost('/config', config)
+      setMsg('Saved')
+    } catch { setMsg('Save failed') }
+    setSaving(false)
+  }
+
+  return (
+    <div>
+      <h1>Rule Configuration</h1>
+      {msg && <div className={msg === 'Saved' ? '' : 'error'} style={{ padding: 'var(--sp-3)', marginBottom: 'var(--sp-4)' }}>{msg}</div>}
       <div className="card">
-        <h2>Issues ({issues.length})</h2>
-        <table>
-          <thead><tr><th>Gate</th><th>Type</th><th>Repo</th><th>Status</th><th>Details</th><th>Action</th></tr></thead>
-          <tbody>
-            {issues.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>No issues</td></tr>
-            ) : issues.map(issue => (
-              <tr key={issue.id}>
-                <td><span className={`gate-badge gate-${issue.gate}`}>Gate {issue.gate}</span></td>
-                <td>{issue.type}</td>
-                <td>{issue.repo}</td>
-                <td><span className={`status-badge ${issue.status}`}>{issue.status}</span></td>
-                <td>{issue.details || '-'}</td>
-                <td>
-                  <button className={`toggle-btn ${issue.status === 'open' ? 'resolve' : 'reopen'}`}
-                    onClick={() => toggleStatus(issue.id)}>
-                    {issue.status === 'open' ? 'Resolve' : 'Reopen'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h2>Default Rule Severities</h2>
+        {config?.rules && (
+          <table>
+            <thead><tr><th>Rule</th><th>Severity</th><th>Enabled</th><th>Parameters</th></tr></thead>
+            <tbody>
+              {Object.entries(config.rules).map(([name, rule]) => (
+                <tr key={name}>
+                  <td><code>{name}</code></td>
+                  <td>
+                    <select value={rule.severity || 'info'} onChange={e => {
+                      const c = { ...config, rules: { ...config.rules, [name]: { ...rule, severity: e.target.value } } }
+                      setConfig(c)
+                    }}>
+                      <option value="info">info</option>
+                      <option value="warn">warn</option>
+                      <option value="block">block</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input type="checkbox" checked={rule.enabled !== false} onChange={e => {
+                      const c = { ...config, rules: { ...config.rules, [name]: { ...rule, enabled: e.target.checked } } }
+                      setConfig(c)
+                    }} />
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-2)' }}>
+                    {Object.entries(rule).filter(([k]) => !['severity', 'enabled'].includes(k)).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ') || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div style={{ marginTop: 'var(--sp-4)' }}>
+          <button className="toggle-btn resolve" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Config'}</button>
+        </div>
       </div>
     </div>
   )
 }
 
-// ── Main App ─────────────────────────────────────────────────────────
-
-function DriftView() {
+// ── 7. Model Health ──────────────────────────────────────────
+function ModelHealthView() {
+  const [health, setHealth] = useState(null)
   const [drift, setDrift] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api('/drift').then(setDrift).catch(() => {}).finally(() => setLoading(false))
+    Promise.all([
+      api('/model/health').catch(() => null),
+      api('/drift').catch(() => null),
+    ]).then(([h, d]) => { setHealth(h); setDrift(d) }).finally(() => setLoading(false))
   }, [])
+  if (loading) return <Loading />
 
-  if (loading) return <div className="loading">Loading drift data...</div>
-  if (!drift) return <div className="card"><h2>No drift data</h2><p>Run <code>scripts/drift_per_repo.py</code> first.</p></div>
-
-  const repos = drift.repos || {}
-  const summary = drift.summary || {}
+  const repos = drift?.repos || {}
+  const driftRepos = Object.entries(repos)
 
   return (
     <div>
-      <h1>📊 Drift Monitoring</h1>
-      <p className="repo-detail-url">Generated: {drift.generated_at?.slice(0, 19)}</p>
+      <h1>Model Health</h1>
       <div className="stats-grid">
-        <div className="stat-card"><h3>{summary.repos_analyzed || 0}</h3><p>Repos Analyzed</p></div>
-        <div className="stat-card open"><h3>{summary.repos_with_drift || 0}</h3><p>With Drift</p></div>
-        <div className="stat-card resolved"><h3>{summary.needs_retraining ? 'YES' : 'NO'}</h3><p>Needs Retrain</p></div>
+        <StatCard value={health?.version || 'v8'} label="Model Version" />
+        <StatCard value={health?.roc_auc ? health.roc_auc.toFixed(3) : '-'} label="ROC-AUC (LORO)" />
+        <StatCard value={health?.oow_auc ? health.oow_auc.toFixed(3) : '-'} label="ROC-AUC (Out-of-Window)" />
+        <StatCard value={health?.n_features || 35} label="Features" />
       </div>
-      <div className="card">
-        <h2>Per-Repo Drift Status</h2>
-        <table>
-          <thead><tr><th>Repo</th><th>Reference</th><th>Current</th><th>Drift?</th><th>Drift Share</th><th>Drifted Features</th></tr></thead>
-          <tbody>
-            {Object.entries(repos).map(([name, r]) => (
-              <tr key={name}>
-                <td><strong>{name}</strong></td>
-                <td>{r.reference_rows}</td>
-                <td>{r.current_rows}</td>
-                <td><span className={`status-badge ${r.dataset_drift ? 'high' : 'low'}`}>{r.dataset_drift ? 'DRIFT' : 'OK'}</span></td>
-                <td>{r.drift_share != null ? (r.drift_share * 100).toFixed(1) + '%' : '-'}</td>
-                <td>{r.drifted_count != null ? `${r.drifted_count}/${r.total_features}` : '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {/* Show drifted features per repo */}
-      {Object.entries(repos).filter(([, r]) => r.drifted_features?.length > 0).map(([name, r]) => (
+
+      {driftRepos.length > 0 && (
+        <div className="card">
+          <h2>Per-Repo Drift Status</h2>
+          <table>
+            <thead><tr><th>Repo</th><th>Reference</th><th>Current</th><th>Drift?</th><th>Drift Share</th><th>Retraining</th></tr></thead>
+            <tbody>
+              {driftRepos.map(([name, r]) => (
+                <tr key={name}>
+                  <td><strong>{name}</strong></td>
+                  <td>{r.reference_rows}</td>
+                  <td>{r.current_rows}</td>
+                  <td><BandBadge band={r.dataset_drift ? 'high' : 'low'} /></td>
+                  <td>{r.drift_share != null ? (r.drift_share * 100).toFixed(1) + '%' : '-'}</td>
+                  <td>{r.needs_retraining ? 'Recommended' : 'OK'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {driftRepos.filter(([, r]) => r.drifted_features?.length > 0).map(([name, r]) => (
         <div key={name} className="card">
-          <h2>⚠️ {name}: Drifted Features</h2>
+          <h2>{name}: Drifted Features</h2>
           <ul className="file-list">
             {r.drifted_features.map((f, i) => <li key={i}><code>{f}</code></li>)}
           </ul>
         </div>
       ))}
+
+      <div className="card">
+        <h2>Known Limitations</h2>
+        <ul className="file-list">
+          <li><strong>React divergence:</strong> OOW ROC-AUC 0.5542, CI includes 0.5 — no measurable signal post-window</li>
+          <li><strong>Band-share drift:</strong> Django 7.2%, React 17.8%, Kafka 16.4%, K8s 15.1%, Rust 11.4% — repos above 10% score higher than training</li>
+          <li><strong>Merge commits:</strong> git log --numstat returns 0 files for merges — known limitation, labels incomplete for merge-heavy repos</li>
+          <li><strong>Calibration:</strong> Brier 0.224 — scores are rankings, not probabilities</li>
+        </ul>
+      </div>
     </div>
   )
 }
 
-function App() {
+// ── Main App ─────────────────────────────────────────────────
+export default function App() {
   const [view, setView] = useState('repos')
   const [selectedRepo, setSelectedRepo] = useState(null)
   const [selectedCommit, setSelectedCommit] = useState(null)
@@ -477,28 +528,31 @@ function App() {
   return (
     <div>
       <nav className="top-nav">
-        <button className={view === 'repos' ? 'active' : ''} onClick={() => setView('repos')}>Repos</button>
-        <button className={view === 'drift' ? 'active' : ''} onClick={() => setView('drift')}>Drift</button>
-        <button className={view === 'issues' ? 'active' : ''} onClick={() => setView('issues')}>Issues</button>
+        {[
+          ['repos', 'Overview'],
+          ['repo-detail', 'Repo Detail'],
+          ['prs', 'PRs'],
+          ['file', 'File Detail'],
+          ['config', 'Config'],
+          ['health', 'Model Health'],
+        ].map(([key, label]) => (
+          <button key={key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}</button>
+        ))}
       </nav>
 
-      {view === 'repos' && (
-        <RepoList onSelect={id => { setSelectedRepo(id); setView('repo-detail') }} />
-      )}
+      {view === 'repos' && <OverviewView onSelectRepo={id => { setSelectedRepo(id); setView('repo-detail') }} />}
       {view === 'repo-detail' && (
-        <RepoDetail
+        <RepoDetailView
           repoId={selectedRepo}
           onSelectCommit={id => { setSelectedCommit(id); setView('commit-detail') }}
           onBack={() => setView('repos')}
         />
       )}
-      {view === 'commit-detail' && (
-        <CommitDetail commitId={selectedCommit} onBack={() => setView('repo-detail')} />
-      )}
-      {view === 'drift' && <DriftView />}
-      {view === 'issues' && <IssuesView />}
+      {view === 'commit-detail' && <CommitDetailView commitId={selectedCommit} onBack={() => setView('repo-detail')} />}
+      {view === 'prs' && <PRView />}
+      {view === 'file' && <FileDetailView onBack={() => setView('repos')} />}
+      {view === 'config' && <ConfigEditorView />}
+      {view === 'health' && <ModelHealthView />}
     </div>
   )
 }
-
-export default App
