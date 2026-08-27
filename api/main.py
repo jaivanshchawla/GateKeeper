@@ -459,6 +459,70 @@ async def score_pr(request: ScorePRRequest):
         raise HTTPException(status_code=500, detail=f"PR scoring error: {e!s}")
 
 
+# ── U.5a: Risk Budget Endpoints ──
+
+@app.get("/budget/{repo}")
+async def get_budget(repo: str):
+    """Get risk budget status for a repo."""
+    from policy.budget import RiskBudget
+    budget = RiskBudget()
+    status = budget.get_status(repo)
+    return status.to_dict()
+
+
+@app.get("/budget")
+async def get_all_budgets():
+    """Get budget status for all repos."""
+    from policy.budget import RiskBudget
+    budget = RiskBudget()
+    repos = ["django", "react", "kafka", "kubernetes", "rust"]
+    return [s.to_dict() for s in budget.get_all_statuses(repos)]
+
+
+@app.post("/budget/{repo}/record")
+async def record_budget_score(repo: str, commit_hash: str, band: str):
+    """Record a scored commit for budget tracking."""
+    from policy.budget import RiskBudget
+    budget = RiskBudget()
+    budget.record_score(repo, commit_hash, band)
+    return {"status": "recorded", "repo": repo, "band": band}
+
+
+# ── U.5d: Simulator Endpoint ──
+
+class SimulateRequest(BaseModel):
+    repo_name: str
+    repo_path: str
+    proposed_config: dict
+    window_days: int = 90
+    max_commits: int = 200
+
+
+@app.post("/simulate")
+async def simulate(request: SimulateRequest):
+    """Simulate a proposed config against historical commits."""
+    from policy.simulator import PolicySimulator
+    from rules.engine import load_config as load_current
+
+    current = load_current()
+    sim = PolicySimulator()
+    try:
+        summary = sim.simulate_repo(
+            repo_path=request.repo_path,
+            repo_name=request.repo_name,
+            proposed_config=request.proposed_config,
+            current_config=current,
+            window_days=request.window_days,
+            max_commits=request.max_commits,
+        )
+        return {
+            "summary": summary.to_dict(),
+            "formatted": sim.format_summary(summary),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation error: {e!s}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

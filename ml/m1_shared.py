@@ -14,6 +14,31 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Module-level identity resolver (initialized per-repo)
+_identity_map: dict[str, str] = {}  # variant -> canonical
+_identity_loaded_for: str = ""
+
+
+def _load_identity_map(repo_path: str):
+    """Load .mailmap-based identity map for a repo. Cached per process."""
+    global _identity_map, _identity_loaded_for
+    rp = str(Path(repo_path).resolve())
+    if rp == _identity_loaded_for and _identity_map:
+        return
+    try:
+        from policy.identity import build_identity_map
+        _identity_map = build_identity_map(repo_path)
+    except ImportError:
+        _identity_map = {}
+    _identity_loaded_for = rp
+
+
+def resolve_author(repo_path: str, email: str) -> str:
+    """Resolve an email to canonical form using .mailmap + heuristics."""
+    _load_identity_map(repo_path)
+    e = email.lower().strip()
+    return _identity_map.get(e, e)
+
 
 def normalize_author_id(identifier: str) -> str:
     """Normalize author identifier (email preferred, name fallback).
@@ -65,7 +90,8 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
                     "date": datetime.fromtimestamp(ct, tz=timezone.utc).replace(tzinfo=None),
                     "files": cf, "subject": cs, "author": ca, "is_merge": False,
                 }
-            ch, ct, ca, cs = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
+            raw_email = parts[2]
+            ch, ct, ca, cs = parts[0], int(parts[1]), resolve_author(repo_path, normalize_author_id(raw_email)), parts[3]
             cf = []
         else:
             cf.append(line)
@@ -86,7 +112,8 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
             continue
         parts = line.split("|", 3)
         if len(parts) == 4 and len(parts[0]) == 40:
-            mh, mt, ma, ms = parts[0], int(parts[1]), normalize_author_id(parts[2]), parts[3]
+            raw_email = parts[2]
+            mh, mt, ma, ms = parts[0], int(parts[1]), resolve_author(repo_path, normalize_author_id(raw_email)), parts[3]
             if mh in graph:
                 graph[mh]["is_merge"] = True
             else:
@@ -151,7 +178,8 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
     for line in result.stdout.strip().split("\n"):
         line = line.strip()
         if line:
-            counts[normalize_author_id(line)] += 1
+            canonical = resolve_author(repo_path, normalize_author_id(line))
+            counts[canonical] += 1
     return dict(counts)
 
 
