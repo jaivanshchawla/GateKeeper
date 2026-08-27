@@ -20,6 +20,11 @@ _graph_cache: dict[str, dict] = {}       # repo_path -> full graph
 _risky_cache: dict[str, set] = {}        # repo_path -> risky hashes
 _sorted_cache: dict[str, list] = {}      # repo_path -> sorted graph list
 _snapshot_cache: dict[str, list] = {}    # repo_path -> list of (hash, state_dict)
+_author_prior_cache: dict[str, dict] = {}  # repo_path -> {hash: count}
+
+# Hot walk cache: persists state between calls for sequential commits.
+# For batch/simulator/backfill, consecutive commits walk from here.
+_hot_state: dict[str, dict] = {}  # repo_path -> {"idx": int, "state": dict}
 
 # Must match dataset rebuild parameters exactly
 WINDOW_START = "2024-07-01"
@@ -112,12 +117,38 @@ def _get_full_graph(repo_path: str) -> tuple[dict, set, list]:
     return _graph_cache[repo_path], _risky_cache[repo_path], _sorted_cache[repo_path]
 
 
+def _precompute_author_prior(repo_path: str) -> dict[str, int]:
+    """Precompute author_prior_commits for ALL commits in the graph.
+
+    Walks the sorted graph once, tracking per-author commit counts.
+    Returns {commit_hash: author_prior_count} for every commit.
+    This replaces count_authors_before() subprocess calls at scoring time.
+    """
+    if repo_path in _author_prior_cache:
+        return _author_prior_cache[repo_path]
+
+    graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
+
+    result: dict[str, int] = {}
+    author_total: dict[str, int] = defaultdict(int)
+
+    for h, v in sorted_graph:
+        author = v.get("author", "")
+        result[h] = author_total[author]
+        author_total[author] += 1
+
+    _author_prior_cache[repo_path] = result
+    return result
+
+
 def clear_cache():
     """Clear all cached graphs. Call after repo updates."""
     _graph_cache.clear()
     _risky_cache.clear()
     _sorted_cache.clear()
     _snapshot_cache.clear()
+    _author_prior_cache.clear()
+    _hot_state.clear()
 
 
 def compute_single_commit_m1_features(
@@ -135,6 +166,8 @@ def compute_single_commit_m1_features(
     Calls ml/m1_shared.py — the SAME code path as bulk extraction.
     Uses graph file paths and author names to ensure parity.
     """
+    # Precompute author_prior_commits if not already done
+    _precompute_author_prior(repo_path)
     from ml.m1_shared import compute_change_shape, compute_m1_features, walk_graph_to_state
 
     # Normalize commit_date
@@ -145,31 +178,40 @@ def compute_single_commit_m1_features(
     # Get full graph, risky hashes, AND sorted list (all cached per repo)
     graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
 
-    # Try to find a snapshot to resume from
+    # Try to find a state to resume from: hot cache > snapshot cache > from scratch
     start_index = 0
     start_state = None
     head_sha = _get_repo_head(repo_path)
     cache_key = f"{repo_path}:{head_sha}"
 
-    if cache_key in _snapshot_cache:
-        # Use in-memory snapshot cache
-        snapshots = _snapshot_cache[cache_key]
-        # Find nearest snapshot before target
-        for snap in reversed(snapshots):
-            if snap["idx"] <= len(sorted_graph) * 0.9:  # Don't use snapshots too close to end
-                start_index = snap["idx"] + 1
-                start_state = snap["state"]
-                break
-    else:
-        # Try disk cache
-        snapshots = _load_snapshots(repo_path, head_sha)
-        if snapshots:
-            _snapshot_cache[cache_key] = snapshots
+    # 1. Hot cache: in-memory state from last call (fastest path)
+    if repo_path in _hot_state:
+        hs = _hot_state[repo_path]
+        if hs["idx"] < len(sorted_graph):
+            # Check if the target is after the hot position
+            target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
+            if target_idx is not None and target_idx > hs["idx"]:
+                start_index = hs["idx"] + 1
+                start_state = hs["state"]
+
+    # 2. Snapshot cache
+    if start_state is None:
+        if cache_key in _snapshot_cache:
+            snapshots = _snapshot_cache[cache_key]
             for snap in reversed(snapshots):
                 if snap["idx"] <= len(sorted_graph) * 0.9:
                     start_index = snap["idx"] + 1
                     start_state = snap["state"]
                     break
+        else:
+            snapshots = _load_snapshots(repo_path, head_sha)
+            if snapshots:
+                _snapshot_cache[cache_key] = snapshots
+                for snap in reversed(snapshots):
+                    if snap["idx"] <= len(sorted_graph) * 0.9:
+                        start_index = snap["idx"] + 1
+                        start_state = snap["state"]
+                        break
 
     # Walk graph to build state up to (not including) the target commit.
     state, target_info = walk_graph_to_state(
@@ -180,12 +222,17 @@ def compute_single_commit_m1_features(
         start_state=start_state,
     )
 
-    # Persist snapshot periodically
+    # Update hot cache for next call
     if commit_hash in graph:
         target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
+        if target_idx is not None:
+            _hot_state[repo_path] = {"idx": target_idx, "state": state}
+
+    # Persist snapshot periodically
+    if commit_hash in graph:
+        target_idx = target_idx if target_idx is not None else next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
         if target_idx is not None and target_idx % SNAPSHOT_INTERVAL < 10:
             snapshots_to_save = _snapshot_cache.get(cache_key, [])
-            # Check if we already have a snapshot near this index
             existing = [s for s in snapshots_to_save if abs(s["idx"] - target_idx) < SNAPSHOT_INTERVAL // 2]
             if not existing:
                 snapshots_to_save.append({"hash": commit_hash, "idx": target_idx, "state": state})
@@ -234,5 +281,10 @@ def compute_single_commit_m1_features(
 
     # Return graph author so extract_single_commit can override PyDriller's email
     result["_graph_author"] = graph_author_used
+
+    # Precomputed author_prior_commits from the graph walk.
+    # This replaces the subprocess-based count_authors_before call.
+    apc_cache = _author_prior_cache.get(repo_path, {})
+    result["_author_prior_commits"] = apc_cache.get(commit_hash, 0)
 
     return result

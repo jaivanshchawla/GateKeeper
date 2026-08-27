@@ -70,6 +70,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
         ["git", "log", f"--since={since}", f"--until={until}",
          f"--pretty=format:{fmt}", "--name-only", "--no-merges", "HEAD"],
         cwd=repo_path, capture_output=True, text=True, timeout=600, check=False,
+        encoding="utf-8", errors="replace",
     )
 
     graph: dict[str, dict] = {}
@@ -106,6 +107,7 @@ def build_graph(repo_path: str, since: str, until: str) -> dict:
         ["git", "log", f"--since={since}", f"--until={until}",
          f"--pretty=format:{fmt}", "--merges", "HEAD"],
         cwd=repo_path, capture_output=True, text=True, timeout=600, check=False,
+        encoding="utf-8", errors="replace",
     )
     for line in merge_result.stdout.strip().split("\n"):
         if not line:
@@ -173,6 +175,7 @@ def count_authors_before(repo_path: str, before_date: str) -> dict[str, int]:
         ["git", "log", f"--before={before_date}", "--format=%aE",
          "--no-merges", "HEAD"],
         cwd=repo_path, capture_output=True, text=True, timeout=300,
+        encoding="utf-8", errors="replace",
     )
     counts: dict[str, int] = defaultdict(int)
     for line in result.stdout.strip().split("\n"):
@@ -216,13 +219,14 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
         file_authors = defaultdict(set, {k: set(v) for k, v in start_state.get("file_authors", {}).items()})
         author_state_raw = start_state.get("author_state", {})
         author_state = defaultdict(
-            lambda: {"files": defaultdict(int), "dirs": defaultdict(int), "last_date": None}
+            lambda: {"files": defaultdict(int), "dirs": defaultdict(int), "last_date": None, "total": 0}
         )
         for author, ast in author_state_raw.items():
             author_state[author] = {
                 "files": defaultdict(int, ast.get("files", {})),
                 "dirs": defaultdict(int, ast.get("dirs", {})),
                 "last_date": ast.get("last_date"),
+                "total": ast.get("total", 0),
             }
         co_change = defaultdict(int, {tuple(k): v for k, v in start_state.get("co_change", {}).items()})
     else:
@@ -282,6 +286,7 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
             file_authors[fp].add(author)
 
         af = author_state[author]
+        af["total"] = af.get("total", 0) + 1
         for fp in files_in_this:
             af["files"][fp] += 1
             d = str(Path(fp).parent)

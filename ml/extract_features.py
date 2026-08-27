@@ -233,91 +233,115 @@ class CommitFeatureExtractor:
         )
         commit_ts = int(result.stdout.strip())
         commit_dt = datetime.fromtimestamp(commit_ts, tz=_tz.utc).replace(tzinfo=None)
-        # S.1 FIX: Use ISO-8601 timestamp (not date string) to avoid midnight
-        # truncation. --before with full timestamp preserves exact time.
-        commit_iso = commit_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
-        # Step 2: Seed author_prior_counts BEFORE commit_date
-        # Bulk: count_authors_before(rp, WINDOW_START) + increment in window
-        #   = count_authors_before(rp, commit_date)  (same thing)
-        # SC must compute the same value.
-        if not self.author_prior_counts:
-            from ml.m1_shared import count_authors_before
-            counts = count_authors_before(repo_path, commit_iso)
-            # Convert to defaultdict(int) so += 1 works for new authors
-            self.author_prior_counts = defaultdict(int, counts)
+        # Step 2: author_prior_commits now comes from the precomputed graph
+        # walk (via compute_single_commit_m1_features → _precompute_author_prior).
+        # No subprocess call needed — the graph already has per-author counts.
 
-        # Step 3: Use PyDriller to get the specific commit (for base features)
-        repository = Repository(repo_path, single=commit_hash)
+        # Step 3: Get commit data via direct git commands (much faster than PyDriller)
+        # PyDriller.Repository(repo, single=hash) scans the ENTIRE repo to find
+        # one commit — 7-8s on Rust. git log + git diff-tree takes <0.2s.
+        _sp_kwargs = dict(cwd=repo_path, capture_output=True, timeout=30,
+                          encoding='utf-8', errors='replace')
 
-        for commit in repository.traverse_commits():
-            # Extract features using the shared method
-            features = self._extract_features_from_commit(commit)
-            # Remove commit_msg as it's not used in training
-            features.pop('commit_msg', None)
-            # Add metadata needed by score_pr.py and rule engine
-            features['commit_message'] = commit.msg or ''
-            features['commit_timestamp'] = commit.committer_date.timestamp() if hasattr(commit.committer_date, 'timestamp') else 0
-            try:
-                # Use new_path for full path, normalize to forward slashes
-                # Use PIPE separator to match CSV format (rebuild_b2.py uses "|")
-                features['touched_files'] = "|".join(sorted([
-                    (getattr(m, 'new_path', getattr(m, 'filename', str(m))) or '').replace('\\', '/')
-                    for m in commit.modified_files
-                    if getattr(m, 'new_path', getattr(m, 'filename', None))
-                ])) if commit.modified_files else ""
-            except Exception:
-                features['touched_files'] = ""
+        # Get commit metadata: timestamp, author email, subject
+        meta_r = _sp.run(
+            ["git", "log", "-1", "--format=%ct|%aE|%s", commit_hash],
+            **_sp_kwargs,
+        )
+        if not meta_r.stdout.strip():
+            raise ValueError(f"Commit {commit_hash} not found in repository")
+        meta_parts = meta_r.stdout.strip().split("|", 2)
+        commit_ts = int(meta_parts[0])
+        author_email = meta_parts[1] if len(meta_parts) > 1 else ""
+        subject = meta_parts[2] if len(meta_parts) > 2 else ""
+        commit_dt = datetime.fromtimestamp(commit_ts, tz=_tz.utc).replace(tzinfo=None)
 
-            # Step 4: Compute M.1 features using ml/m1_shared.py
-            # ONE code path — same function as bulk extraction
-            try:
-                from ml.single_commit_features import compute_single_commit_m1_features
-                commit_date = commit.committer_date
-                if commit_date.tzinfo is not None:
-                    commit_date = commit_date.astimezone(_tz.utc)
-                touched = set(features['touched_files'].split("|")) if features.get('touched_files') else set()
+        # Get commit message (full, for is_fix_bug_revert and commit_msg_length)
+        msg_r = _sp.run(
+            ["git", "log", "-1", "--format=%B", commit_hash],
+            **_sp_kwargs,
+        )
+        full_msg = msg_r.stdout.strip()
 
-                m1 = compute_single_commit_m1_features(
-                    repo_path=repo_path,
-                    commit_hash=commit_hash,
-                    commit_date=commit_date,
-                    author_name=features.get('author', ''),
-                    touched_files=touched,
-                    lines_added=features.get('lines_added', 0),
-                    lines_deleted=features.get('lines_deleted', 0),
-                    since_date=self.since,
-                )
-                features.update(m1)
+        # Get files and line counts
+        diff_r = _sp.run(
+            ["git", "diff-tree", "--no-commit-id", "-r", "--numstat", commit_hash],
+            **_sp_kwargs,
+        )
+        touched_files = set()
+        lines_added = 0
+        lines_deleted = 0
+        for dline in diff_r.stdout.strip().split("\n"):
+            if not dline.strip():
+                continue
+            parts = dline.split("\t")
+            if len(parts) >= 3:
+                try:
+                    la = int(parts[0]) if parts[0] != "-" else 0
+                    ld = int(parts[1]) if parts[1] != "-" else 0
+                    lines_added += la
+                    lines_deleted += ld
+                    touched_files.add(parts[2])
+                except ValueError:
+                    pass
+        touched_files_str = "|".join(sorted(touched_files))
 
-                # Override author and author_prior_commits with graph values.
-                # PyDriller and git log can report different emails for the
-                # same commit (e.g. tg@trevorgross.com vs tmgross@umich.edu).
-                # The CSV and count_authors_before use git's email, so SC must too.
-                graph_author = m1.get('_graph_author', features.get('author', ''))
-                if graph_author:
-                    features['author'] = graph_author
-                    # _extract_features_from_commit already incremented the count
-                    # for PyDriller's email. We need the count for the graph
-                    # email BEFORE this commit was counted. Since
-                    # count_authors_before uses --before (exclusive), the count
-                    # for the graph email is correct as-is IF PyDriller's email
-                    # != graph author (increment went to a different key).
-                    # If they match, the increment made it +1 too high.
-                    pydriller_author = self._normalize_author(
-                        commit.author.email or commit.author.name
-                    )
-                    raw_count = self.author_prior_counts.get(graph_author, 0)
-                    if graph_author == pydriller_author:
-                        raw_count -= 1  # undo the increment from _extract
-                    features['author_prior_commits'] = max(0, raw_count)
-            except Exception as e:
-                import warnings
-                warnings.warn(f"M.1 feature computation failed: {e}", stacklevel=2)
+        # Normalize author email
+        author_name = self._normalize_author(author_email)
 
-            return features
+        # Count directories
+        directories = set()
+        for fp in touched_files:
+            d = os.path.dirname(fp)
+            if d:
+                directories.add(d)
 
-        raise ValueError(f"Commit {commit_hash} not found in repository")
+        # Base features dict
+        features = {
+            'hash': commit_hash,
+            'author': author_name,
+            'date': commit_dt,
+            'lines_added': lines_added,
+            'lines_deleted': lines_deleted,
+            'files_touched': len(touched_files),
+            'dirs_touched': len(directories),
+            'commit_message': full_msg,
+            'commit_msg_length': len(full_msg),
+            'commit_timestamp': float(commit_ts),
+            'is_fix_bug_revert': int(any(k in full_msg.lower() for k in ["fix", "bug", "revert"])),
+            'hour_of_day': commit_dt.hour,
+            'day_of_week': commit_dt.weekday(),
+            'touched_files': touched_files_str,
+        }
+
+        # Step 4: Compute M.1 features using ml/m1_shared.py
+        try:
+            from ml.single_commit_features import compute_single_commit_m1_features
+            m1 = compute_single_commit_m1_features(
+                repo_path=repo_path,
+                commit_hash=commit_hash,
+                commit_date=commit_dt.replace(tzinfo=_tz.utc),
+                author_name=author_name,
+                touched_files=touched_files,
+                lines_added=lines_added,
+                lines_deleted=lines_deleted,
+                since_date=self.since,
+            )
+            features.update(m1)
+
+            # Override author with graph author (emails may differ between
+            # git commands and graph build).
+            graph_author = m1.get('_graph_author', features.get('author', ''))
+            if graph_author:
+                features['author'] = graph_author
+            # Use precomputed author_prior_commits from the graph walk.
+            features['author_prior_commits'] = m1.get('_author_prior_commits', 0)
+        except Exception as e:
+            import warnings
+            warnings.warn(f"M.1 feature computation failed: {e}", stacklevel=2)
+
+        return features
 
     @staticmethod
     def _normalize_author(identifier: str) -> str:
