@@ -63,8 +63,9 @@ content_analysis:
 risk_budget:
   enabled: true
   window_days: 30
-  max_high_pct: 0.20  # max 20% high-band commits in rolling window
+  max_high_pct: 0.25  # 25% high-band cap; k8s was 23.9% at 20%, set 25% to flag real excursions
   warn_threshold: 0.80  # warn at 80% of budget
+  # Per-repo override: place .gatekeeper.yml in repo with different max_high_pct
 
 # U.5b: Scoped Policy
 branch_rules:

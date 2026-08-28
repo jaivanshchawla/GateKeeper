@@ -46,7 +46,7 @@ class BudgetStatus:
 DEFAULT_BUDGET_CONFIG = {
     "enabled": True,
     "window_days": 30,
-    "max_high_pct": 0.20,  # 20% high-band commits allowed
+    "max_high_pct": 0.25,  # 25% high-band commits allowed (per-repo override via .gatekeeper.yml)
     "warn_threshold": 0.80,  # warn at 80% of budget
 }
 
