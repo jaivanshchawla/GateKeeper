@@ -1,6 +1,9 @@
 # Data files (large, generated) - DVC tracks via .dvc files
 data/*.csv
 
+# Graph snapshots (large pickles, regenerated from repos)
+data/graph_snapshots/
+
 # MLflow tracking database
 mlflow.db
 
