@@ -209,12 +209,23 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
     if sorted_graph is None:
         sorted_graph = sorted(graph.items(), key=lambda x: x[1]["date"])
 
+    def _coerce_date(v):
+        """Ensure a value is a datetime (handle ISO strings from JSON/pickle)."""
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v)
+            except (ValueError, TypeError):
+                return datetime.min
+        return datetime.min
+
     if start_state:
         # Resume from snapshot
         file_change_count = defaultdict(int, start_state.get("file_change_count", {}))
         file_risky_count = defaultdict(int, start_state.get("file_risky_count", {}))
         file_revert_count = defaultdict(int, start_state.get("file_revert_count", {}))
-        file_first_seen = dict(start_state.get("file_first_seen", {}))
+        file_first_seen = {k: _coerce_date(v) for k, v in start_state.get("file_first_seen", {}).items()}
         file_last_touch_hash = dict(start_state.get("file_last_touch_hash", {}))
         file_authors = defaultdict(set, {k: set(v) for k, v in start_state.get("file_authors", {}).items()})
         author_state_raw = start_state.get("author_state", {})
@@ -225,7 +236,7 @@ def walk_graph_to_state(graph: dict, risky_hashes: set[str],
             author_state[author] = {
                 "files": defaultdict(int, ast.get("files", {})),
                 "dirs": defaultdict(int, ast.get("dirs", {})),
-                "last_date": ast.get("last_date"),
+                "last_date": _coerce_date(ast.get("last_date")) if ast.get("last_date") else None,
                 "total": ast.get("total", 0),
             }
         co_change = defaultdict(int, {tuple(k): v for k, v in start_state.get("co_change", {}).items()})

@@ -74,7 +74,11 @@ def build_identity_map(
     # Process .mailmap: chain through to find ultimate canonical
     def resolve(email: str) -> str:
         e = email.lower()
+        seen = set()
         while e in mailmap:
+            if e in seen:
+                break  # guard against self-cycles (e.g. arcterus@mail.com)
+            seen.add(e)
             e = mailmap[e]
         return e
 

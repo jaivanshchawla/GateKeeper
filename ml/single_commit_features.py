@@ -30,7 +30,7 @@ _hot_state: dict[str, dict] = {}  # repo_path -> {"idx": int, "state": dict}
 WINDOW_START = "2024-07-01"
 FORWARD_LOOK_END = "2026-07-07"
 LABEL_WINDOW_DAYS = 7
-SNAPSHOT_INTERVAL = 1000  # persist state every N commits
+SNAPSHOT_INTERVAL = 5000  # persist state every N commits
 SNAPSHOT_DIR = _Path(__file__).parent.parent / "data" / "graph_snapshots"
 
 
@@ -104,17 +104,66 @@ def _save_snapshots(repo_path: str, head_sha: str, snapshots: list) -> None:
 def _get_full_graph(repo_path: str) -> tuple[dict, set, list]:
     """Get the full repo graph, risky hashes, AND sorted list, all cached.
 
+    Tries pickle cache first (0.1s on Rust), falls back to git log (11s).
     Returns (graph, risky_hashes, sorted_graph_list).
-    The sorted list avoids re-sorting on every walk_graph_to_state call.
     """
     if repo_path not in _graph_cache:
+        # Try loading from pickle cache first
+        loaded = _try_load_pickle(repo_path)
+        if loaded is not None:
+            _graph_cache[repo_path] = loaded["graph"]
+            _risky_cache[repo_path] = loaded["risky"]
+            _sorted_cache[repo_path] = loaded["sorted"]
+            return _graph_cache[repo_path], _risky_cache[repo_path], _sorted_cache[repo_path]
+
+        # Fall back to git log
         from ml.m1_shared import build_graph, compute_risky_hashes
         graph = build_graph(repo_path, WINDOW_START, FORWARD_LOOK_END)
         risky = compute_risky_hashes(graph, label_window_days=LABEL_WINDOW_DAYS)
         _graph_cache[repo_path] = graph
         _risky_cache[repo_path] = risky
         _sorted_cache[repo_path] = sorted(graph.items(), key=lambda x: x[1]["date"])
+        # Persist for next time
+        _try_save_pickle(repo_path)
     return _graph_cache[repo_path], _risky_cache[repo_path], _sorted_cache[repo_path]
+
+
+def _try_load_pickle(repo_path: str) -> dict | None:
+    """Try to load graph from pickle cache. Returns None if not found or stale."""
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    cache_file = SNAPSHOT_DIR / f"graph_{head_sha[:12]}.pkl"
+    if not cache_file.exists():
+        return None
+    try:
+        with open(cache_file, "rb") as f:
+            data = _pickle.load(f)
+        # Validate window matches
+        if data.get("window_start") != WINDOW_START or data.get("forward_look_end") != FORWARD_LOOK_END:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _try_save_pickle(repo_path: str) -> None:
+    """Persist graph to pickle for next cold start."""
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = SNAPSHOT_DIR / f"graph_{head_sha[:12]}.pkl"
+    try:
+        with open(cache_file, "wb") as f:
+            _pickle.dump({
+                "graph": _graph_cache[repo_path],
+                "risky": _risky_cache[repo_path],
+                "sorted": _sorted_cache[repo_path],
+                "head": head_sha,
+                "window_start": WINDOW_START,
+                "forward_look_end": FORWARD_LOOK_END,
+            }, f, protocol=_pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
 
 
 def _precompute_author_prior(repo_path: str) -> dict[str, int]:
@@ -149,6 +198,150 @@ def clear_cache():
     _snapshot_cache.clear()
     _author_prior_cache.clear()
     _hot_state.clear()
+
+
+def _ensure_walk_snapshots(repo_path: str) -> list[dict]:
+    """Ensure walk-state snapshots exist for this repo, building if needed.
+
+    Returns list of {"idx": int, "state": dict} sorted by idx.
+    Each snapshot covers SNAPSHOT_INTERVAL commits in the sorted graph.
+    """
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    snap_file = SNAPSHOT_DIR / f"walk_{head_sha[:12]}.pkl"
+
+    if snap_file.exists():
+        try:
+            with open(snap_file, "rb") as f:
+                snaps = _pickle.load(f)
+            if snaps and len(snaps) > 0 and "state" in snaps[0]:
+                return snaps
+        except Exception:
+            pass
+
+    from ml.m1_shared import walk_graph_to_state
+    graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
+    snapshots = []
+    state = None
+    prev_idx = 0
+
+    for snap_point in range(SNAPSHOT_INTERVAL, len(sorted_graph), SNAPSHOT_INTERVAL):
+        target_hash = sorted_graph[snap_point][0]
+        state, _ = walk_graph_to_state(
+            graph, risky_hashes, stop_hash=target_hash,
+            sorted_graph=sorted_graph, start_index=prev_idx, start_state=state,
+        )
+        # Convert to plain dicts — fast, pickle-friendly, no deepcopy needed
+        plain = {
+            "file_change_count": dict(state["file_change_count"]),
+            "file_risky_count": dict(state["file_risky_count"]),
+            "file_revert_count": dict(state["file_revert_count"]),
+            "file_first_seen": dict(state["file_first_seen"]),
+            "file_last_touch_hash": dict(state["file_last_touch_hash"]),
+            "file_authors": {k: list(v) for k, v in state["file_authors"].items()},
+            "author_state": {
+                a: {"files": dict(s["files"]), "dirs": dict(s["dirs"]),
+                    "last_date": s["last_date"], "total": s.get("total", 0)}
+                for a, s in state["author_state"].items()
+            },
+            "co_change": {k: v for k, v in state["co_change"].items()},
+        }
+        snapshots.append({"idx": snap_point, "state": plain})
+        prev_idx = snap_point + 1
+
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(snap_file, "wb") as f:
+            _pickle.dump(snapshots, f, protocol=_pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
+
+    return snapshots
+
+
+def _find_nearest_snapshot(snapshots: list[dict], target_idx: int) -> tuple[int, dict | None]:
+    """Find the nearest snapshot before target_idx. Returns (start_index, state)."""
+    best = None
+    for snap in snapshots:
+        if snap["idx"] < target_idx:
+            best = snap
+    if best:
+        return best["idx"] + 1, best["state"]
+    return 0, None
+
+
+def _state_needs_conversion(state: dict) -> bool:
+    """Check if state dicts are defaultdicts (needs conversion for walk resume)."""
+    fcc = state.get("file_change_count", {})
+    return hasattr(fcc, "default_factory") if fcc else False
+
+
+def batch_score_commits(
+    repo_path: str,
+    commit_hashes: list[str],
+) -> list[dict]:
+    """Score multiple commits in a single graph walk (fast for PRs).
+
+    Uses persistent walk snapshots to skip to the nearest checkpoint.
+    For Rust (66K commits), this reduces a 10s walk to ~2s.
+    """
+    from ml.m1_shared import compute_change_shape, compute_m1_features, walk_graph_to_state
+    import subprocess as _sp
+
+    graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
+    _precompute_author_prior(repo_path)
+
+    # Build index for sorted_graph
+    sorted_idx = {h: i for i, (h, _) in enumerate(sorted_graph)}
+
+    # Sort commits by position in sorted_graph
+    indexed = [(i, h) for h in commit_hashes if (i := sorted_idx.get(h)) is not None]
+    indexed.sort(key=lambda x: x[0])
+
+    if not indexed:
+        return [{}] * len(commit_hashes)
+
+    # Find nearest snapshot for the FIRST commit
+    snapshots = _ensure_walk_snapshots(repo_path)
+    first_idx = indexed[0][0]
+    start_index, start_state = _find_nearest_snapshot(snapshots, first_idx)
+
+    state = start_state
+    prev_idx = start_index
+    result_map = {}
+
+    for target_idx, target_hash in indexed:
+        if target_idx < prev_idx:
+            continue  # shouldn't happen after sorting, but safety
+        state, target_info = walk_graph_to_state(
+            graph, risky_hashes, stop_hash=target_hash,
+            sorted_graph=sorted_graph, start_index=prev_idx, start_state=state,
+        )
+        if target_info:
+            touched_files = target_info.get("files", set())
+            author = target_info.get("author", "")
+            m1 = compute_m1_features(
+                state=state, graph=graph, target_hash=target_hash,
+                target_date=target_info["date"], author=author,
+                files_touched=touched_files, is_merge=1 if target_info.get("is_merge") else 0,
+                risky_hashes=risky_hashes,
+            )
+            shape = compute_change_shape(0, 0, len(touched_files), touched_files)
+            result = {**m1, **shape}
+            result.pop("co_change_strength_max", None)
+            result.pop("co_change_strength_mean", None)
+            result["_graph_author"] = author
+            apc = _author_prior_cache.get(repo_path, {})
+            result["_author_prior_commits"] = apc.get(target_hash, 0)
+            result_map[target_hash] = result
+        prev_idx = target_idx + 1
+
+    # Update hot cache
+    if indexed:
+        last_idx, _ = indexed[-1]
+        _hot_state[repo_path] = {"idx": last_idx, "state": state}
+
+    return [result_map.get(h, {}) for h in commit_hashes]
 
 
 def compute_single_commit_m1_features(
@@ -194,24 +387,12 @@ def compute_single_commit_m1_features(
                 start_index = hs["idx"] + 1
                 start_state = hs["state"]
 
-    # 2. Snapshot cache
+    # 2. Walk snapshots (persistent pickle, skips large gaps)
     if start_state is None:
-        if cache_key in _snapshot_cache:
-            snapshots = _snapshot_cache[cache_key]
-            for snap in reversed(snapshots):
-                if snap["idx"] <= len(sorted_graph) * 0.9:
-                    start_index = snap["idx"] + 1
-                    start_state = snap["state"]
-                    break
-        else:
-            snapshots = _load_snapshots(repo_path, head_sha)
-            if snapshots:
-                _snapshot_cache[cache_key] = snapshots
-                for snap in reversed(snapshots):
-                    if snap["idx"] <= len(sorted_graph) * 0.9:
-                        start_index = snap["idx"] + 1
-                        start_state = snap["state"]
-                        break
+        walk_snaps = _ensure_walk_snapshots(repo_path)
+        target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
+        if target_idx is not None:
+            start_index, start_state = _find_nearest_snapshot(walk_snaps, target_idx)
 
     # Walk graph to build state up to (not including) the target commit.
     state, target_info = walk_graph_to_state(
