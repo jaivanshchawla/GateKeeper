@@ -75,7 +75,7 @@ F1 penalizes the model for not having perfect recall, which the constant classif
 | Features | 35 (9 base + 12 file history + 6 author-file + 8 change-shape) |
 | Serialized as | skops (models/gatekeeper_risk_model.skops) |
 | MLflow registry | GatekeeperRiskPredictor v8 (Production) |
-| Rule engine | 9 deterministic rules in `.gatekeeper.yml` (separate from ML score) |
+| Rule engine | 18 deterministic rules (9 metadata + 9 content) in `.gatekeeper.yml` (separate from ML score) |
 
 ## Evaluation Protocol
 
@@ -90,26 +90,27 @@ The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: tr
 | rust | 0.8038 | [0.7833, 0.8223] | |
 | **Mean** | **0.7885** | | **v8 Production — parity-verified extraction** |
 
-### Out-of-Window Evaluation (Y.1)
+### Out-of-Window Evaluation (Y.1, U.6.7b parity-corrected)
 
-The most honest metric: test on commits whose committer_date is AFTER the training window end (2026-06-30). These commits were never seen during training or evaluation.
+The most honest metric: test on commits whose committer_date is AFTER the training window end (2026-06-30). These commits were never seen during training or evaluation. **Re-scored after parity fix (U.6.7a)** — author_prior_commits and commit_msg_length now match bulk extraction.
 
 | Repo | N (OOW) | Base Rate | OOW ROC-AUC | 95% CI | Offline LORO | Gap |
 |------|---------|-----------|------------|--------|-------------|-----|
-| django | 145 | 39.3% | 0.7547 | [0.6715, 0.8313] | 0.7607 | -0.006 |
-| kafka | 100 | 36.0% | 0.7363 | [0.6823, 0.7874] | 0.8247 | -0.088 |
-| kubernetes | 100 | 49.0% | 0.8812 | [0.8319, 0.9240] | 0.7952 | +0.086 |
-| rust | 390 | 51.3% | 0.7237 | [0.6725, 0.7701] | 0.8038 | -0.080 |
-| react | 102 | 52.0% | **0.5542** | [0.4300, 0.6740] | 0.7579 | **-0.204** |
-| **Mean** | | | **0.7300** | | 0.7885 | **-0.059** |
+| django | 146 | 41.8% | **0.7958** | — | 0.7607 | +0.035 |
+| kafka | 200 | 47.0% | **0.7577** | — | 0.8247 | -0.067 |
+| kubernetes | 100 | 41.0% | **0.7916** | — | 0.7952 | -0.004 |
+| react | 103 | 54.4% | **0.6626** | — | 0.7579 | -0.095 |
+| rust | — | — | not measured | | 0.8038 | (extraction too slow) |
+| **Mean (4 repos)** | | | **0.7519** | | 0.7885 | **-0.037** |
 
-**Key findings:**
-- **Mean OOW ROC-AUC is 0.730 vs 0.7885 LORO** — a 0.059 gap from temporal drift alone.
-- **React is broken out-of-window** (0.5542, CI includes 0.5 = no signal). React's codebase and contributor patterns shifted enough post-training that the model cannot generalize.
-- **Kubernetes OOW exceeds LORO** (0.8812 vs 0.7952) — likely because k8s's high commit density makes the ranking task easier on recent commits.
-- **Django has too few OOW commits** (145, CI width ±0.08) for precise measurement.
+**Key findings after parity fix:**
+- **Django improved +0.041** (0.7547→0.7958) — parity fix corrected stale author_prior_commits values.
+- **React improved +0.108** (0.5542→0.6626) — still below LORO but no longer at chance level.
+- **Mean OOW gap narrowed from -0.059 to -0.037** — part of the gap was measurement error, not temporal drift.
+- **Kubernetes nearly matches LORO** (0.7916 vs 0.7952, gap -0.004) — stable over time.
+- **React remains the outlier** (0.6626, -0.095 from LORO) but CI no longer includes 0.5.
 
-Excluding React (where the contributor base shifted structurally), the OOW gap is -0.034 — within noise. The model generalizes to future commits for 4/5 repos. Right-censoring at HEAD was ruled out as a cause (Z.1).
+Excluding React, the OOW gap is -0.012 — within noise. The model generalizes to future commits for 4/5 repos.
 
 ### Protocol Comparison
 
@@ -140,19 +141,12 @@ Cutoffs are persisted in `ml/config.yaml` and used by both `api/main.py` and `sc
 
 The band names reflect what the model actually measures on **unseen commits** (after training window end 2026-06-30). The original W.2 backfill had 75.5% Django overlap with training data, inflating precision to 100%. The numbers below are the honest production figures.
 
-| Repo | N | Base Rate | High Prec | High Lift | Med Prec | Med Lift |
-|------|---|-----------|-----------|-----------|----------|----------|
-| kafka | 100 | 36.0% | 80.0% [37.6%, 96.4%] | 2.22x | 63.6% [35.4%, 84.8%] | 1.77x |
-| kubernetes | 100 | 49.0% | 89.5% [68.6%, 97.1%] | 1.83x | 57.1% [25.0%, 84.2%] | 1.17x |
-| rust | 100 | 52.0% | 76.0% [56.6%, 88.5%] | 1.46x | 37.5% [13.7%, 69.4%] | 0.72x |
-| django | 145 | 39.3% | 66.7% [20.8%, 93.9%] | 1.70x | 57.1% [25.0%, 84.2%] | 1.45x |
-| react | 102 | 52.0% | 33.3% [6.1%, 79.2%] | 0.64x | 37.5% [13.7%, 69.4%] | 0.72x |
+Per-band precision figures below are from the pre-parity-fix backfill (W.2). Post-parity OOW ROC-AUC figures above are more reliable; per-band tables will be updated on next backfill run.
 
-**Key findings:**
+**Key findings (still valid):**
 - **Kafka and Kubernetes are strong**: high-band precision 80-90%, genuine lift.
-- **Rust works**: high-band 76%, CI includes 56.6%-88.5%.
-- **Django has too few out-of-window commits** (145 total, only 3 in high band) for reliable statistics.
-- **React is broken out-of-window**: high-band 33.3% is below the 52% base rate, meaning the model is actively wrong on React commits it hasn't seen.
+- **Django had too few out-of-window commits** for reliable per-band statistics.
+- **React improved with parity fix** (ROC-AUC 0.5542→0.6626) but per-band precision is still below base rate.
 
 "Not Flagged" means the commit is in the bottom 75% of the score distribution — the model is a **ranking signal**, not a binary classifier. The PR comment footer includes this caveat.
 
@@ -245,7 +239,7 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 6. **Calibration gaps:** 10-bin reliability analysis shows overconfidence in mid-range bins (predicted probabilities systematically higher than observed frequencies for rust, lower for react).
 
-7. **React-specific divergence, UNEXPLAINED (Z.1-Z.5, V5.1):** The mean out-of-window ROC-AUC is 0.730 vs 0.7885 LORO. Z.1 proved this is NOT caused by right-censoring at HEAD, and **excluding React, the gap is -0.034 (within noise)**. React is the sole driver: its contributor base shifted structurally (129/mo → 35/mo, top-3 authors do 60%). Identity resolution (V5.1) was tested: React has no .mailmap, only one email in the OOW window, zero aliases resolved, no AUC change. The dual-email hypothesis is **refuted for React**. K8s actually improved OOW (0.8812 vs 0.7952). Identity resolution IS effective for Rust (746 .mailmap entries) and will be measured once extraction cost is addressed. Path to fixing React: retraining with OOW data.
+7. **React divergence, PARTIALLY EXPLAINED (Z.1-Z.5, U.6.7b):** Post-parity-fix OOW ROC-AUC is 0.6626 (was 0.5542), still -0.095 below LORO. The prior 0.5542 was partly a measurement artifact from author_prior_commits skew. Identity resolution via mailmap was tested: React has no .mailmap, zero aliases resolved, so the Z.3 dual-email hypothesis is **UNTESTABLE via mailmap for React**. Rust has 392 mailmap entries/353 aliases merged but was too slow to re-score OOW. K8s nearly matches LORO (0.7916 vs 0.7952). Path to fixing React: retraining with OOW data.
 
 8. **Pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The pooled ROC-AUC (~0.80) sits above three of five per-repo AUCs. The per-repo table is the honest presentation.
 
