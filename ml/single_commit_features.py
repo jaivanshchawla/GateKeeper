@@ -169,22 +169,67 @@ def _try_save_pickle(repo_path: str) -> None:
 def _precompute_author_prior(repo_path: str) -> dict[str, int]:
     """Precompute author_prior_commits for ALL commits in the graph.
 
-    Walks the sorted graph once, tracking per-author commit counts.
-    Returns {commit_hash: author_prior_count} for every commit.
-    This replaces count_authors_before() subprocess calls at scoring time.
+    Builds a full-history index from git log using non-mailmap email
+    normalization (matching t1_fix_author_prior.py and the bulk CSV).
+    Returns {commit_hash: author_prior_count} for every in-graph commit.
+
+    Two subprocess calls total: one for the full history, one for the
+    in-graph commits' emails. Then O(n log n) via bisect.
     """
     if repo_path in _author_prior_cache:
         return _author_prior_cache[repo_path]
 
+    from ml.m1_shared import normalize_author_id
+    import bisect as _bisect
+
     graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
 
-    result: dict[str, int] = {}
-    author_total: dict[str, int] = defaultdict(int)
+    # Pass 1: build per-author sorted timestamp list from FULL history
+    result_proc = _subprocess.run(
+        ["git", "log", "--pretty=format:%ct|%aE", "--no-merges", "HEAD"],
+        cwd=repo_path, capture_output=True, timeout=600,
+        encoding="utf-8", errors="replace",
+    )
+    email_timestamps: dict[str, list[int]] = defaultdict(list)
+    for line in result_proc.stdout.strip().split("\n"):
+        if "|" not in line:
+            continue
+        parts = line.split("|", 1)
+        try:
+            ts = int(parts[0])
+            email = normalize_author_id(parts[1])
+            email_timestamps[email].append(ts)
+        except (ValueError, IndexError):
+            pass
+    for email in email_timestamps:
+        email_timestamps[email].sort()
 
-    for h, v in sorted_graph:
-        author = v.get("author", "")
-        result[h] = author_total[author]
-        author_total[author] += 1
+    # Pass 2: get hash → (timestamp, email) for ALL commits in the repo
+    result_proc2 = _subprocess.run(
+        ["git", "log", "--pretty=format:%H|%ct|%aE",
+         "--no-merges", "HEAD"],
+        cwd=repo_path, capture_output=True, timeout=600,
+        encoding="utf-8", errors="replace",
+    )
+    hash_ts_email: dict[str, tuple[int, str]] = {}
+    for line in result_proc2.stdout.strip().split("\n"):
+        if line.count("|") < 2:
+            continue
+        parts = line.split("|", 2)
+        try:
+            h, ts, email = parts[0], int(parts[1]), parts[2]
+            hash_ts_email[h] = (ts, normalize_author_id(email))
+        except (ValueError, IndexError):
+            pass
+
+    # Build author_prior for EVERY commit in the repo (not just graph)
+    # so CSV rows outside the graph window are also covered
+    result: dict[str, int] = {}
+    for h, (ts, email) in hash_ts_email.items():
+        if email in email_timestamps:
+            result[h] = _bisect.bisect_left(email_timestamps[email], ts)
+        else:
+            result[h] = 0
 
     _author_prior_cache[repo_path] = result
     return result

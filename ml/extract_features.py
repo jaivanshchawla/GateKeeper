@@ -110,7 +110,8 @@ class CommitFeatureExtractor:
         day_of_week = commit_date.weekday()  # 0=Monday, 6=Sunday
 
         # Commit message features — FULL message, not just subject
-        commit_msg = commit.msg or ""
+        # Normalize CRLF to LF for consistency with single-commit path
+        commit_msg = (commit.msg or "").replace("\r\n", "\n")
         commit_msg_length = len(commit_msg)
         is_fix_bug_revert = any(
             keyword in commit_msg.lower()
@@ -262,7 +263,9 @@ class CommitFeatureExtractor:
             ["git", "log", "-1", "--format=%B", commit_hash],
             **_sp_kwargs,
         )
-        full_msg = msg_r.stdout.strip()
+        # Normalize CRLF to LF — PyDriller uses CRLF, git log uses LF.
+        # Both paths must use the same normalization for commit_msg_length parity.
+        full_msg = msg_r.stdout.replace("\r\n", "\n").strip()
 
         # Get files and line counts
         diff_r = _sp.run(
