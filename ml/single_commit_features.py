@@ -19,6 +19,7 @@ from pathlib import Path as _Path
 _graph_cache: dict[str, dict] = {}       # repo_path -> full graph
 _risky_cache: dict[str, set] = {}        # repo_path -> risky hashes
 _sorted_cache: dict[str, list] = {}      # repo_path -> sorted graph list
+_sorted_idx_cache: dict[str, dict] = {}  # repo_path -> {hash: index in sorted_graph}
 _snapshot_cache: dict[str, list] = {}    # repo_path -> list of (hash, state_dict)
 _author_prior_cache: dict[str, dict] = {}  # repo_path -> {hash: count}
 
@@ -101,6 +102,13 @@ def _save_snapshots(repo_path: str, head_sha: str, snapshots: list) -> None:
     snapshot_file.write_text(_json.dumps(serializable))
 
 
+def _get_sorted_idx(repo_path: str) -> dict:
+    """Get hash→index lookup for sorted_graph. Built once, O(1) lookups."""
+    if repo_path not in _sorted_idx_cache:
+        _get_full_graph(repo_path)  # ensures sorted_graph is built
+    return _sorted_idx_cache.get(repo_path, {})
+
+
 def _get_full_graph(repo_path: str) -> tuple[dict, set, list]:
     """Get the full repo graph, risky hashes, AND sorted list, all cached.
 
@@ -113,7 +121,9 @@ def _get_full_graph(repo_path: str) -> tuple[dict, set, list]:
         if loaded is not None:
             _graph_cache[repo_path] = loaded["graph"]
             _risky_cache[repo_path] = loaded["risky"]
-            _sorted_cache[repo_path] = loaded["sorted"]
+            sg = loaded["sorted"]
+            _sorted_cache[repo_path] = sg
+            _sorted_idx_cache[repo_path] = {h: i for i, (h, _) in enumerate(sg)}
             return _graph_cache[repo_path], _risky_cache[repo_path], _sorted_cache[repo_path]
 
         # Fall back to git log
@@ -122,7 +132,9 @@ def _get_full_graph(repo_path: str) -> tuple[dict, set, list]:
         risky = compute_risky_hashes(graph, label_window_days=LABEL_WINDOW_DAYS)
         _graph_cache[repo_path] = graph
         _risky_cache[repo_path] = risky
-        _sorted_cache[repo_path] = sorted(graph.items(), key=lambda x: x[1]["date"])
+        sg = sorted(graph.items(), key=lambda x: x[1]["date"])
+        _sorted_cache[repo_path] = sg
+        _sorted_idx_cache[repo_path] = {h: i for i, (h, _) in enumerate(sg)}
         # Persist for next time
         _try_save_pickle(repo_path)
     return _graph_cache[repo_path], _risky_cache[repo_path], _sorted_cache[repo_path]
@@ -166,18 +178,54 @@ def _try_save_pickle(repo_path: str) -> None:
         pass
 
 
+def _load_author_prior_pickle(repo_path: str) -> dict[str, int] | None:
+    """Try to load precomputed author_prior from pickle. Returns None if missing/stale."""
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    cache_file = SNAPSHOT_DIR / f"author_prior_{head_sha[:12]}.pkl"
+    if not cache_file.exists():
+        return None
+    try:
+        with open(cache_file, "rb") as f:
+            data = _pickle.load(f)
+        if isinstance(data, dict) and len(data) > 0:
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _save_author_prior_pickle(repo_path: str, data: dict[str, int]) -> None:
+    """Persist author_prior to disk for next cold start."""
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = SNAPSHOT_DIR / f"author_prior_{head_sha[:12]}.pkl"
+    try:
+        with open(cache_file, "wb") as f:
+            _pickle.dump(data, f, protocol=_pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
+
+
 def _precompute_author_prior(repo_path: str) -> dict[str, int]:
-    """Precompute author_prior_commits for ALL commits in the graph.
+    """Precompute author_prior_commits for ALL commits in the repo.
 
     Builds a full-history index from git log using non-mailmap email
     normalization (matching t1_fix_author_prior.py and the bulk CSV).
-    Returns {commit_hash: author_prior_count} for every in-graph commit.
+    Returns {commit_hash: author_prior_count} for every commit.
 
-    Two subprocess calls total: one for the full history, one for the
-    in-graph commits' emails. Then O(n log n) via bisect.
+    Persisted to disk (pickle, keyed on HEAD sha) so cold starts load
+    in ~0.1s instead of rebuilding from git log (~17s on Rust).
     """
     if repo_path in _author_prior_cache:
         return _author_prior_cache[repo_path]
+
+    # Try loading from disk cache first
+    disk_cache = _load_author_prior_pickle(repo_path)
+    if disk_cache is not None:
+        _author_prior_cache[repo_path] = disk_cache
+        return disk_cache
 
     from ml.m1_shared import normalize_author_id
     import bisect as _bisect
@@ -232,6 +280,7 @@ def _precompute_author_prior(repo_path: str) -> dict[str, int]:
             result[h] = 0
 
     _author_prior_cache[repo_path] = result
+    _save_author_prior_pickle(repo_path, result)
     return result
 
 
@@ -240,6 +289,7 @@ def clear_cache():
     _graph_cache.clear()
     _risky_cache.clear()
     _sorted_cache.clear()
+    _sorted_idx_cache.clear()
     _snapshot_cache.clear()
     _author_prior_cache.clear()
     _hot_state.clear()
@@ -248,25 +298,30 @@ def clear_cache():
 def _ensure_walk_snapshots(repo_path: str) -> list[dict]:
     """Ensure walk-state snapshots exist for this repo, building if needed.
 
-    Returns list of {"idx": int, "state": dict} sorted by idx.
-    Each snapshot covers SNAPSHOT_INTERVAL commits in the sorted graph.
+    Stores each snapshot as a SEPARATE pickle file (~5MB each for Rust)
+    instead of one 65MB blob. Loads only the nearest snapshot on demand.
+    Returns list of {"idx": int} (just positions, no state) for index lookup.
     """
     import pickle as _pickle
+    import json as _json
     head_sha = _get_repo_head(repo_path)
-    snap_file = SNAPSHOT_DIR / f"walk_{head_sha[:12]}.pkl"
+    prefix = f"walk_{head_sha[:12]}"
+    index_file = SNAPSHOT_DIR / f"{prefix}_index.json"
 
-    if snap_file.exists():
+    # Try loading existing index
+    if index_file.exists():
         try:
-            with open(snap_file, "rb") as f:
-                snaps = _pickle.load(f)
-            if snaps and len(snaps) > 0 and "state" in snaps[0]:
-                return snaps
+            idx_data = _json.loads(index_file.read_text())
+            if isinstance(idx_data, list) and len(idx_data) > 0:
+                return idx_data
         except Exception:
             pass
 
+    # Build snapshots — one pickle per snapshot point
     from ml.m1_shared import walk_graph_to_state
     graph, risky_hashes, sorted_graph = _get_full_graph(repo_path)
-    snapshots = []
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    snapshot_positions = []
     state = None
     prev_idx = 0
 
@@ -276,7 +331,7 @@ def _ensure_walk_snapshots(repo_path: str) -> list[dict]:
             graph, risky_hashes, stop_hash=target_hash,
             sorted_graph=sorted_graph, start_index=prev_idx, start_state=state,
         )
-        # Convert to plain dicts — fast, pickle-friendly, no deepcopy needed
+        # Convert to plain dicts — fast, pickle-friendly
         plain = {
             "file_change_count": dict(state["file_change_count"]),
             "file_risky_count": dict(state["file_risky_count"]),
@@ -291,27 +346,74 @@ def _ensure_walk_snapshots(repo_path: str) -> list[dict]:
             },
             "co_change": {k: v for k, v in state["co_change"].items()},
         }
-        snapshots.append({"idx": snap_point, "state": plain})
+        # Save individual snapshot file
+        snap_file = SNAPSHOT_DIR / f"{prefix}_s{snap_point}.pkl"
+        try:
+            with open(snap_file, "wb") as f:
+                _pickle.dump({"idx": snap_point, "state": plain}, f, protocol=_pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            pass
+        snapshot_positions.append(snap_point)
         prev_idx = snap_point + 1
 
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    # Save index (just positions)
     try:
-        with open(snap_file, "wb") as f:
-            _pickle.dump(snapshots, f, protocol=_pickle.HIGHEST_PROTOCOL)
+        index_file.write_text(_json.dumps(snapshot_positions))
     except Exception:
         pass
 
-    return snapshots
+    return [{"idx": p} for p in snapshot_positions]
+
+
+def _load_nearest_snapshot(repo_path: str, target_idx: int) -> tuple[int, dict | None]:
+    """Load ONLY the snapshot nearest to target_idx. Returns (start_index, state)."""
+    import pickle as _pickle
+    head_sha = _get_repo_head(repo_path)
+    prefix = f"walk_{head_sha[:12]}"
+    index_file = SNAPSHOT_DIR / f"{prefix}_index.json"
+
+    if not index_file.exists():
+        return 0, None
+
+    try:
+        positions = _json.loads(index_file.read_text())
+    except Exception:
+        return 0, None
+
+    # Find the largest position before target_idx
+    best_pos = None
+    for pos in positions:
+        if pos < target_idx:
+            best_pos = pos
+
+    if best_pos is None:
+        return 0, None
+
+    # Load only this one snapshot (~5MB)
+    snap_file = SNAPSHOT_DIR / f"{prefix}_s{best_pos}.pkl"
+    if not snap_file.exists():
+        return 0, None
+
+    try:
+        with open(snap_file, "rb") as f:
+            data = _pickle.load(f)
+        return data["idx"] + 1, data["state"]
+    except Exception:
+        return 0, None
 
 
 def _find_nearest_snapshot(snapshots: list[dict], target_idx: int) -> tuple[int, dict | None]:
-    """Find the nearest snapshot before target_idx. Returns (start_index, state)."""
+    """Find the nearest snapshot before target_idx. Returns (start_index, state).
+
+    DEPRECATED: Use _load_nearest_snapshot for individual-file snapshots.
+    Kept for backward compatibility with in-memory snapshot lists.
+    """
     best = None
     for snap in snapshots:
         if snap["idx"] < target_idx:
             best = snap
     if best:
-        return best["idx"] + 1, best["state"]
+        return best["idx"] + 1, best.get("state")
     return 0, None
 
 
@@ -346,10 +448,9 @@ def batch_score_commits(
     if not indexed:
         return [{}] * len(commit_hashes)
 
-    # Find nearest snapshot for the FIRST commit
-    snapshots = _ensure_walk_snapshots(repo_path)
+    # Load nearest snapshot for the FIRST commit (individual file, ~5MB)
     first_idx = indexed[0][0]
-    start_index, start_state = _find_nearest_snapshot(snapshots, first_idx)
+    start_index, start_state = _load_nearest_snapshot(repo_path, first_idx)
 
     state = start_state
     prev_idx = start_index
@@ -422,22 +523,20 @@ def compute_single_commit_m1_features(
     head_sha = _get_repo_head(repo_path)
     cache_key = f"{repo_path}:{head_sha}"
 
-    # 1. Hot cache: in-memory state from last call (fastest path)
-    if repo_path in _hot_state:
-        hs = _hot_state[repo_path]
-        if hs["idx"] < len(sorted_graph):
-            # Check if the target is after the hot position
-            target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
-            if target_idx is not None and target_idx > hs["idx"]:
-                start_index = hs["idx"] + 1
-                start_state = hs["state"]
+    # O(1) index lookup instead of O(n) linear scan
+    sorted_idx = _get_sorted_idx(repo_path)
+    target_idx = sorted_idx.get(commit_hash)
 
-    # 2. Walk snapshots (persistent pickle, skips large gaps)
-    if start_state is None:
-        walk_snaps = _ensure_walk_snapshots(repo_path)
-        target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
-        if target_idx is not None:
-            start_index, start_state = _find_nearest_snapshot(walk_snaps, target_idx)
+    # 1. Hot cache: in-memory state from last call (fastest path)
+    if repo_path in _hot_state and target_idx is not None:
+        hs = _hot_state[repo_path]
+        if hs["idx"] < len(sorted_graph) and target_idx > hs["idx"]:
+            start_index = hs["idx"] + 1
+            start_state = hs["state"]
+
+    # 2. Walk snapshots (individual pickle files, load only nearest)
+    if start_state is None and target_idx is not None:
+        start_index, start_state = _load_nearest_snapshot(repo_path, target_idx)
 
     # Walk graph to build state up to (not including) the target commit.
     state, target_info = walk_graph_to_state(
@@ -449,21 +548,17 @@ def compute_single_commit_m1_features(
     )
 
     # Update hot cache for next call
-    if commit_hash in graph:
-        target_idx = next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
-        if target_idx is not None:
-            _hot_state[repo_path] = {"idx": target_idx, "state": state}
+    if target_idx is not None:
+        _hot_state[repo_path] = {"idx": target_idx, "state": state}
 
     # Persist snapshot periodically
-    if commit_hash in graph:
-        target_idx = target_idx if target_idx is not None else next((i for i, (h, _) in enumerate(sorted_graph) if h == commit_hash), None)
-        if target_idx is not None and target_idx % SNAPSHOT_INTERVAL < 10:
-            snapshots_to_save = _snapshot_cache.get(cache_key, [])
-            existing = [s for s in snapshots_to_save if abs(s["idx"] - target_idx) < SNAPSHOT_INTERVAL // 2]
-            if not existing:
-                snapshots_to_save.append({"hash": commit_hash, "idx": target_idx, "state": state})
-                _snapshot_cache[cache_key] = snapshots_to_save
-                _save_snapshots(repo_path, head_sha, snapshots_to_save)
+    if target_idx is not None and target_idx % SNAPSHOT_INTERVAL < 10:
+        snapshots_to_save = _snapshot_cache.get(cache_key, [])
+        existing = [s for s in snapshots_to_save if abs(s["idx"] - target_idx) < SNAPSHOT_INTERVAL // 2]
+        if not existing:
+            snapshots_to_save.append({"hash": commit_hash, "idx": target_idx, "state": state})
+            _snapshot_cache[cache_key] = snapshots_to_save
+            _save_snapshots(repo_path, head_sha, snapshots_to_save)
 
     # CRITICAL: Use graph file paths and author, NOT PyDriller's.
     # PyDriller and git log can produce different paths/names.
