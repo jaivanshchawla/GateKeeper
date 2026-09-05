@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 
 const SCREENSHOT_DIR = path.join(__dirname, '..', 'docs', 'screenshots');
-const BASE_URL = 'http://localhost:5178';
+const BASE_URL = 'http://localhost:5173';
 
 async function waitForContent(page, timeout = 8000) {
   try {
