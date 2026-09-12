@@ -34,7 +34,186 @@
             "docs/ref/contrib/gis/model-api.txt",
             "docs/ref/settings.txt"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "20 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 20,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "6 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 6,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "All files are exempt (docs/markdown)",
+              "evidence": {}
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": false
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": []
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.5837448476813734,
+              "direction": "increases",
+              "feature_value": 24.0,
+              "human_readable": "File has 24 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.7726879786932841,
+              "direction": "decreases",
+              "feature_value": 581.3333333333334,
+              "human_readable": "avg touched file age (days): 581.3 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.6690240500611253,
+              "direction": "decreases",
+              "feature_value": 717.0,
+              "human_readable": "oldest touched file age (days): 717.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -68,46 +247,195 @@
             "docs/releases/6.1.txt",
             "tests/queries/test_qs_combinators.py"
           ],
-          "rule_results": []
-        }
-      ]
-    },
-    {
-      "id": "django-d992705f",
-      "number": "d992705f",
-      "repo": "django",
-      "verdict": "low",
-      "commit_count": 1,
-      "file_count": 7,
-      "total_lines_added": 144,
-      "total_lines_deleted": 8,
-      "mean_score": 0.5199655748244436,
-      "max_score": 0.5199655748244436,
-      "min_score": 0.5199655748244436,
-      "riskiest_sha": "d992705f9eb56199dc474b77af16474e5ce3d2ab",
-      "created_at": "2026-08-18T18:06:40+00:00",
-      "commits": [
-        {
-          "hash": "d992705f9eb56199dc474b77af16474e5ce3d2ab",
-          "author": "Adam Johnson",
-          "author_email": "me@adamj.eu",
-          "timestamp": "2026-08-18T18:06:40+00:00",
-          "message": "Fixed #37259 -- Restored support for old-signature Model.from_db() overrides.",
-          "score": 0.5199655748244436,
-          "band": "low",
-          "lines_added": 144,
-          "lines_deleted": 8,
-          "files_count": 7,
-          "files": [
-            "django/db/models/query.py",
-            "docs/internals/deprecation.txt",
-            "docs/ref/models/instances.txt",
-            "docs/releases/6.1.1.txt",
-            "docs/releases/6.1.txt",
-            "tests/basic/models.py",
-            "tests/basic/tests.py"
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "18 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 18,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "2 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 2,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "Tests included or no code changes",
+              "evidence": {
+                "has_tests": true,
+                "has_code": true,
+                "files": [
+                  "docs/releases/6.1.txt",
+                  "tests/queries/test_qs_combinators.py"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": [
+                  "tests/queries/test_qs_combinators.py"
+                ]
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
           ],
-          "rule_results": []
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 2.0136406789533794,
+              "direction": "increases",
+              "feature_value": 89.0,
+              "human_readable": "File has 89 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.9412231259047985,
+              "direction": "decreases",
+              "feature_value": 776.0,
+              "human_readable": "oldest touched file age (days): 776.0 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.42630066734272987,
+              "direction": "decreases",
+              "feature_value": 555.5,
+              "human_readable": "avg touched file age (days): 555.5 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -143,7 +471,201 @@
             "packages/react-server/src/ReactFlightServer.js",
             "scripts/error-codes/codes.json"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": false,
+              "message": "517 lines changed (threshold: 500)",
+              "evidence": {
+                "total_lines": 517,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "4 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 4,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "Tests included or no code changes",
+              "evidence": {
+                "has_tests": true,
+                "has_code": true,
+                "files": [
+                  "packages/react-server/src/ReactFlightServer.js",
+                  "scripts/error-codes/codes.json",
+                  "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMEdge-test.js",
+                  "packages/react-client/src/ReactFlightClient.js"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": [
+                  "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMEdge-test.js"
+                ]
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity increase: +42 control flow keywords in added lines (42 added, 0 removed)",
+              "evidence": {
+                "added": 42,
+                "removed": 0,
+                "delta": 42
+              }
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.8043761642184108,
+              "direction": "increases",
+              "feature_value": 137.0,
+              "human_readable": "File has 137 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.669733549002558,
+              "direction": "decreases",
+              "feature_value": 67.25,
+              "human_readable": "avg days since touched files last changed: 67.2 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.6090537786367349,
+              "direction": "decreases",
+              "feature_value": 783.0,
+              "human_readable": "oldest touched file age (days): 783.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -185,7 +707,214 @@
             "scripts/sizebot/render-comment.js",
             "scripts/tasks/danger.js"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": false,
+              "message": "1654 lines changed (threshold: 500)",
+              "evidence": {
+                "total_lines": 1654,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "11 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 11,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "Tests included or no code changes",
+              "evidence": {
+                "has_tests": true,
+                "has_code": true,
+                "files": [
+                  "scripts/tasks/danger.js",
+                  "dangerfile.js",
+                  ".github/workflows/runtime_sizebot_comment.yml",
+                  "scripts/sizebot/render-comment.js",
+                  "scripts/sizebot/compare-sizes.js"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": false,
+              "message": "Touches both config/CI and source code",
+              "evidence": {
+                "has_config": true,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [
+                  ".github/workflows/runtime_build_and_test.yml"
+                ],
+                "added": [
+                  ".github/workflows/runtime_build_and_test.yml"
+                ]
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": false,
+              "message": "Dependencies modified: manifests: package.json; lockfiles: yarn.lock",
+              "evidence": {
+                "manifests": [
+                  "package.json",
+                  "yarn.lock"
+                ],
+                "has_lockfile": true
+              }
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": false,
+              "message": "Binary/generated files in commit: yarn.lock",
+              "evidence": {
+                "files": [
+                  "yarn.lock"
+                ]
+              }
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity increase: +113 control flow keywords in added lines (151 added, 38 removed)",
+              "evidence": {
+                "added": 151,
+                "removed": 38,
+                "delta": 113
+              }
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.6831461384426802,
+              "direction": "increases",
+              "feature_value": 55.0,
+              "human_readable": "File has 55 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.7466876324615441,
+              "direction": "decreases",
+              "feature_value": 775.0,
+              "human_readable": "oldest touched file age (days): 775.0 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.5083499726606533,
+              "direction": "decreases",
+              "feature_value": 732.1666666666666,
+              "human_readable": "avg touched file age (days): 732.2 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -219,7 +948,199 @@
             "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
             "packages/react-server/src/ReactFlightServer.js"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "104 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 104,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "2 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 2,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "Tests included or no code changes",
+              "evidence": {
+                "has_tests": true,
+                "has_code": true,
+                "files": [
+                  "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
+                  "packages/react-server/src/ReactFlightServer.js"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": [
+                  "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js"
+                ]
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity increase: +18 control flow keywords in added lines (19 added, 1 removed)",
+              "evidence": {
+                "added": 19,
+                "removed": 1,
+                "delta": 18
+              }
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.8561263866722584,
+              "direction": "increases",
+              "feature_value": 137.0,
+              "human_readable": "File has 137 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.7157704755663872,
+              "direction": "decreases",
+              "feature_value": 125.5,
+              "human_readable": "avg days since touched files last changed: 125.5 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.6038955889525823,
+              "direction": "decreases",
+              "feature_value": 782.0,
+              "human_readable": "oldest touched file age (days): 782.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -254,7 +1175,203 @@
             "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
             "test-common/test-common-internal-api/src/main/java/org/apache/kafka/common/test/api/ClusterTest.java"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "34 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 34,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "3 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 3,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": true,
+              "message": "Tests included or no code changes",
+              "evidence": {
+                "has_tests": true,
+                "has_code": true,
+                "files": [
+                  "test-common/test-common-internal-api/src/main/java/org/apache/kafka/common/test/api/ClusterTest.java",
+                  "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
+                  "server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [
+                  "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
+                  "test-common/test-common-internal-api/src/main/java/org/apache/kafka/common/test/api/ClusterTest.java"
+                ],
+                "added": [
+                  "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
+                  "test-common/test-common-internal-api/src/main/java/org/apache/kafka/common/test/api/ClusterTest.java"
+                ]
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": false,
+              "message": "Test code deleted (18 lines removed, 16 added)",
+              "evidence": {
+                "lines_deleted": 18,
+                "lines_added": 16
+              }
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.3407039657467976,
+              "direction": "increases",
+              "feature_value": 16.0,
+              "human_readable": "File has 16 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.8605673435376957,
+              "direction": "decreases",
+              "feature_value": 698.0,
+              "human_readable": "avg touched file age (days): 698.0 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.6714574951911345,
+              "direction": "decreases",
+              "feature_value": 778.0,
+              "human_readable": "oldest touched file age (days): 778.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -288,144 +1405,198 @@
             "committer-tools/refresh_collaborators.py",
             "committer-tools/requirements.txt"
           ],
-          "rule_results": []
-        }
-      ]
-    },
-    {
-      "id": "kafka-8c556f5d",
-      "number": "8c556f5d",
-      "repo": "kafka",
-      "verdict": "low",
-      "commit_count": 1,
-      "file_count": 2,
-      "total_lines_added": 76,
-      "total_lines_deleted": 7,
-      "mean_score": 0.1762227064765324,
-      "max_score": 0.1762227064765324,
-      "min_score": 0.1762227064765324,
-      "riskiest_sha": "8c556f5d66def69787a36a41c9f7124e76609640",
-      "created_at": "2026-08-21T16:54:04+00:00",
-      "commits": [
-        {
-          "hash": "8c556f5d66def69787a36a41c9f7124e76609640",
-          "author": "Alieh Saeedi",
-          "author_email": "107070585+aliehsaeedii@users.noreply.github.com",
-          "timestamp": "2026-08-21T16:54:04+00:00",
-          "message": "KAFKA-20850: Add system test for suppress() changelog across the HEADERS boundary (#23075)",
-          "score": 0.1762227064765324,
-          "band": "low",
-          "lines_added": 76,
-          "lines_deleted": 7,
-          "files_count": 2,
-          "files": [
-            "tests/kafkatest/services/streams.py",
-            "tests/kafkatest/tests/streams/streams_application_upgrade_test.py"
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "17 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 17,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "2 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 2,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": false,
+              "message": "No test files included in code change",
+              "evidence": {
+                "has_tests": false,
+                "has_code": true,
+                "files": [
+                  "committer-tools/requirements.txt",
+                  "committer-tools/refresh_collaborators.py"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": []
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": false,
+              "message": "Dependencies modified: manifests: committer-tools/requirements.txt",
+              "evidence": {
+                "manifests": [
+                  "committer-tools/requirements.txt"
+                ],
+                "has_lockfile": false
+              }
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
           ],
-          "rule_results": []
-        }
-      ]
-    },
-    {
-      "id": "kubernetes-7365a940",
-      "number": "7365a940",
-      "repo": "kubernetes",
-      "verdict": "low",
-      "commit_count": 1,
-      "file_count": 2,
-      "total_lines_added": 73,
-      "total_lines_deleted": 2,
-      "mean_score": 0.2954410563848979,
-      "max_score": 0.2954410563848979,
-      "min_score": 0.2954410563848979,
-      "riskiest_sha": "7365a940b0efe8727d5521e4d29b4b0aad30d40a",
-      "created_at": "2026-08-14T19:07:23+00:00",
-      "commits": [
-        {
-          "hash": "7365a940b0efe8727d5521e4d29b4b0aad30d40a",
-          "author": "thc1006",
-          "author_email": "84045975+thc1006@users.noreply.github.com",
-          "timestamp": "2026-08-14T19:07:23+00:00",
-          "message": "resourceclaim: copy template annotations before creating claims",
-          "score": 0.2954410563848979,
-          "band": "low",
-          "lines_added": 73,
-          "lines_deleted": 2,
-          "files_count": 2,
-          "files": [
-            "pkg/controller/resourceclaim/controller.go",
-            "pkg/controller/resourceclaim/controller_test.go"
-          ],
-          "rule_results": []
-        }
-      ]
-    },
-    {
-      "id": "kubernetes-52ba9013",
-      "number": "52ba9013",
-      "repo": "kubernetes",
-      "verdict": "low",
-      "commit_count": 1,
-      "file_count": 2,
-      "total_lines_added": 183,
-      "total_lines_deleted": 6,
-      "mean_score": 0.24957275110408164,
-      "max_score": 0.24957275110408164,
-      "min_score": 0.24957275110408164,
-      "riskiest_sha": "52ba90138eb40cab0987dac73e05c838149bdd1c",
-      "created_at": "2026-08-12T11:19:17+00:00",
-      "commits": [
-        {
-          "hash": "52ba90138eb40cab0987dac73e05c838149bdd1c",
-          "author": "Vyom Yadav",
-          "author_email": "73882557+Vyom-Yadav@users.noreply.github.com",
-          "timestamp": "2026-08-12T11:19:17+00:00",
-          "message": "Fix windows backslash escaping (#141296)",
-          "score": 0.24957275110408164,
-          "band": "low",
-          "lines_added": 183,
-          "lines_deleted": 6,
-          "files_count": 2,
-          "files": [
-            "staging/src/k8s.io/kubectl/pkg/cmd/cp/filespec.go",
-            "staging/src/k8s.io/kubectl/pkg/cmd/cp/filespec_test.go"
-          ],
-          "rule_results": []
-        }
-      ]
-    },
-    {
-      "id": "kubernetes-ae1d6147",
-      "number": "ae1d6147",
-      "repo": "kubernetes",
-      "verdict": "high",
-      "commit_count": 1,
-      "file_count": 3,
-      "total_lines_added": 27,
-      "total_lines_deleted": 4,
-      "mean_score": 0.9567256142294278,
-      "max_score": 0.9567256142294278,
-      "min_score": 0.9567256142294278,
-      "riskiest_sha": "ae1d6147433d8303ec132fe46c5abee81e1f6daa",
-      "created_at": "2026-08-11T18:26:56+00:00",
-      "commits": [
-        {
-          "hash": "ae1d6147433d8303ec132fe46c5abee81e1f6daa",
-          "author": "Jordan Liggitt",
-          "author_email": "liggitt@google.com",
-          "timestamp": "2026-08-11T18:26:56+00:00",
-          "message": "Include minCompatibilityVersion info in featuregates yaml",
-          "score": 0.9567256142294278,
-          "band": "high",
-          "lines_added": 27,
-          "lines_deleted": 4,
-          "files_count": 3,
-          "files": [
-            "test/compatibility_lifecycle/cmd/feature_gates.go",
-            "test/compatibility_lifecycle/cmd/feature_gates_test.go",
-            "test/compatibility_lifecycle/reference/versioned_feature_list.yaml"
-          ],
-          "rule_results": []
+          "shap_top3": [
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.4717834070324898,
+              "direction": "decreases",
+              "feature_value": 497.0,
+              "human_readable": "avg days since touched files last changed: 497.0 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.16045162128284574,
+              "direction": "decreases",
+              "feature_value": 711.0,
+              "human_readable": "avg touched file age (days): 711.0 (lowers risk)"
+            },
+            {
+              "feature": "days_since_last_change_max",
+              "description": "max days since touched file last changed",
+              "shap_value": -0.14067606767639518,
+              "direction": "decreases",
+              "feature_value": 711.0,
+              "human_readable": "max days since touched file last changed: 711.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -463,7 +1634,199 @@
             "src/bootstrap/src/core/build_steps/llvm.rs",
             "src/bootstrap/src/core/build_steps/setup.rs"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "49 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 49,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "6 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 6,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": false,
+              "message": "No test files included in code change",
+              "evidence": {
+                "has_tests": false,
+                "has_code": true,
+                "files": [
+                  "compiler/rustc_trait_selection/src/traits/mod.rs",
+                  "compiler/rustc_trait_selection/src/traits/coherence.rs",
+                  "src/bootstrap/src/core/build_steps/setup.rs",
+                  "compiler/rustc_hir_analysis/src/hir_ty_lowering/dyn_trait.rs",
+                  "compiler/rustc_mir_transform/src/inline.rs"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": []
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": false,
+              "message": "Code deleted (35 lines) without error-handling context in commit message",
+              "evidence": {
+                "lines_deleted": 35,
+                "lines_added": 14
+              }
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 2.110097768367268,
+              "direction": "increases",
+              "feature_value": 109.0,
+              "human_readable": "File has 109 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.8596844045096077,
+              "direction": "decreases",
+              "feature_value": 783.0,
+              "human_readable": "oldest touched file age (days): 783.0 (lowers risk)"
+            },
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.584016605746001,
+              "direction": "decreases",
+              "feature_value": 63.5,
+              "human_readable": "avg days since touched files last changed: 63.5 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -497,7 +1860,193 @@
             "clippy_utils/README.md",
             "rust-toolchain.toml"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "4 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 4,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "2 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 2,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": false,
+              "message": "No test files included in code change",
+              "evidence": {
+                "has_tests": false,
+                "has_code": true,
+                "files": [
+                  "clippy_utils/README.md",
+                  "rust-toolchain.toml"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": true,
+                "has_code": false
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": []
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_prior_risky_max",
+              "description": "max prior risky changes to touched files",
+              "shap_value": 1.9355134079232812,
+              "direction": "increases",
+              "feature_value": 116.0,
+              "human_readable": "File has 116 prior risky change(s) (elevates risk)"
+            },
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.5921103223226964,
+              "direction": "decreases",
+              "feature_value": 55.5,
+              "human_readable": "avg days since touched files last changed: 55.5 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.3657701031770557,
+              "direction": "decreases",
+              "feature_value": 677.0,
+              "human_readable": "avg touched file age (days): 677.0 (lowers risk)"
+            }
+          ]
         }
       ]
     },
@@ -533,7 +2082,195 @@
             "library/stdarch/crates/core_arch/src/arm_shared/mod.rs",
             "library/stdarch/crates/core_arch/src/mod.rs"
           ],
-          "rule_results": []
+          "rule_results": [
+            {
+              "rule": "large_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "20 lines changed (within 500 limit)",
+              "evidence": {
+                "total_lines": 20,
+                "max_lines": 500
+              }
+            },
+            {
+              "rule": "too_many_files",
+              "severity": "warn",
+              "passed": true,
+              "message": "4 files touched (within 20 limit)",
+              "evidence": {
+                "files_touched": 4,
+                "max_files": 20
+              }
+            },
+            {
+              "rule": "no_tests",
+              "severity": "warn",
+              "passed": false,
+              "message": "No test files included in code change",
+              "evidence": {
+                "has_tests": false,
+                "has_code": true,
+                "files": [
+                  "library/stdarch/crates/core_arch/src/aarch64/mod.rs",
+                  "library/portable-simd/crates/core_simd/src/swizzle_dyn.rs",
+                  "library/stdarch/crates/core_arch/src/mod.rs",
+                  "library/stdarch/crates/core_arch/src/arm_shared/mod.rs"
+                ]
+              }
+            },
+            {
+              "rule": "config_and_code",
+              "severity": "warn",
+              "passed": true,
+              "message": "Config-only or code-only change",
+              "evidence": {
+                "has_config": false,
+                "has_code": true
+              }
+            },
+            {
+              "rule": "revert_hotspot",
+              "severity": "block",
+              "passed": true,
+              "message": "File revert count: 0 (within 3 limit)",
+              "evidence": {
+                "revert_count": 0,
+                "threshold": 3
+              }
+            },
+            {
+              "rule": "first_touch",
+              "severity": "info",
+              "passed": true,
+              "message": "First-time contributor (0 prior commits)",
+              "evidence": {
+                "author_prior_commits": 0
+              }
+            },
+            {
+              "rule": "weekend_deploy",
+              "severity": "info",
+              "passed": true,
+              "message": "Committed on Mon",
+              "evidence": {
+                "day_of_week": 0,
+                "is_weekend": false
+              }
+            },
+            {
+              "rule": "stale_file",
+              "severity": "info",
+              "passed": true,
+              "message": "File history: 0 prior changes",
+              "evidence": {
+                "file_prior_changes_max": 0,
+                "threshold": 180
+              }
+            },
+            {
+              "rule": "direct_to_main",
+              "severity": "warn",
+              "passed": true,
+              "message": "Not a direct push to main",
+              "evidence": {
+                "is_direct_push": false,
+                "branch": "main"
+              }
+            },
+            {
+              "rule": "test_deleted",
+              "severity": "block",
+              "passed": true,
+              "message": "No test files deleted (or tests added)",
+              "evidence": {
+                "deleted": [],
+                "added": []
+              }
+            },
+            {
+              "rule": "assertion_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No assertion reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "dependency_change",
+              "severity": "warn",
+              "passed": true,
+              "message": "No dependency files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "todo_debt",
+              "severity": "info",
+              "passed": true,
+              "message": "No debt markers added",
+              "evidence": {}
+            },
+            {
+              "rule": "debug_leftover",
+              "severity": "warn",
+              "passed": true,
+              "message": "No debug leftovers in added lines",
+              "evidence": {}
+            },
+            {
+              "rule": "large_binary",
+              "severity": "warn",
+              "passed": true,
+              "message": "No binary/generated files",
+              "evidence": {}
+            },
+            {
+              "rule": "migration_touch",
+              "severity": "block",
+              "passed": true,
+              "message": "No migration files modified",
+              "evidence": {}
+            },
+            {
+              "rule": "error_handling_removed",
+              "severity": "warn",
+              "passed": true,
+              "message": "No error-handling reduction detected",
+              "evidence": {}
+            },
+            {
+              "rule": "complexity_delta",
+              "severity": "info",
+              "passed": true,
+              "message": "Complexity within normal range",
+              "evidence": {}
+            }
+          ],
+          "shap_top3": [
+            {
+              "feature": "file_age_days_max",
+              "description": "oldest touched file age (days)",
+              "shap_value": -0.5690018996829167,
+              "direction": "decreases",
+              "feature_value": 778.0,
+              "human_readable": "oldest touched file age (days): 778.0 (lowers risk)"
+            },
+            {
+              "feature": "days_since_last_change_mean",
+              "description": "avg days since touched files last changed",
+              "shap_value": -0.46968693658709526,
+              "direction": "decreases",
+              "feature_value": 2670.75,
+              "human_readable": "avg days since touched files last changed: 2670.8 (lowers risk)"
+            },
+            {
+              "feature": "file_age_days_mean",
+              "description": "avg touched file age (days)",
+              "shap_value": -0.345373427728191,
+              "direction": "decreases",
+              "feature_value": 682.6666666666666,
+              "human_readable": "avg touched file age (days): 682.7 (lowers risk)"
+            }
+          ]
         }
       ]
     }

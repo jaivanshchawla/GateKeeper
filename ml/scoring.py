@@ -101,8 +101,8 @@ def _load_explainer():
     if _explainer is not None:
         return _explainer
     try:
-        from ml.explainer import get_explainer
-        _explainer = get_explainer()
+        from ml.explainer import _load_model_and_explainer
+        _explainer, _ = _load_model_and_explainer()
     except Exception:
         pass
     return _explainer

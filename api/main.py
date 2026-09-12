@@ -694,18 +694,37 @@ async def get_commit(commit_id: str):
                     except Exception:
                         files = [row["touched_files"]]
 
+                # W1.4: Use shared scoring for SHAP + rules
+                from ml.scoring import evaluate_commit_full
+                result = evaluate_commit_full(
+                    feature_values=fv,
+                    repo_name=row.get("source_repo", ""),
+                    commit_hash=row["hash"],
+                    author=row.get("author", ""),
+                    message=str(row.get("commit_msg", "")),
+                    files=files if isinstance(files, list) else [],
+                    lines_added=int(row.get("lines_added", 0)),
+                    lines_deleted=int(row.get("lines_deleted", 0)),
+                    files_touched=int(row.get("files_touched", 0)),
+                    is_merge=bool(row.get("is_merge", 0)),
+                    hour_of_day=int(row.get("hour_of_day", 12)),
+                    day_of_week=int(row.get("day_of_week", 0)),
+                    author_prior_commits=int(row.get("author_prior_commits", 0)),
+                    file_revert_count_max=int(row.get("file_revert_count_max", 0)),
+                    file_prior_changes_max=int(row.get("file_prior_changes_max", 0)),
+                )
                 return {
                     "id": commit_id,
                     "sha": row["hash"],
                     "author": row.get("author", "unknown"),
-                    "score": score,
-                    "risk_label": band,
+                    "score": result.risk_score,
+                    "risk_label": result.band,
                     "timestamp": str(row.get("committer_date", "")),
                     "message": row.get("commit_msg", ""),
                     "lines_added": int(row.get("lines_added", 0)),
                     "lines_deleted": int(row.get("lines_deleted", 0)),
-                    "rule_results": [],
-                    "shap_top3": [],
+                    "rule_results": [r.to_dict() for r in result.rule_results],
+                    "shap_top3": result.shap_top3,
                     "files_touched": files,
                 }
         except Exception:
