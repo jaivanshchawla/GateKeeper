@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell,
@@ -519,15 +519,36 @@ function ModelHealthView() {
   )
 }
 
+// ── Theme Toggle ─────────────────────────────────────────────
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('gk-theme') || 'dark')
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('gk-theme', theme)
+  }, [theme])
+  return (
+    <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+      {theme === 'dark' ? '☀' : '☾'} {theme === 'dark' ? 'Light' : 'Dark'}
+    </button>
+  )
+}
+
 // ── Main App ─────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState('repos')
   const [selectedRepo, setSelectedRepo] = useState(null)
   const [selectedCommit, setSelectedCommit] = useState(null)
 
+  // Initialize theme on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('gk-theme') || 'dark'
+    document.documentElement.setAttribute('data-theme', saved)
+  }, [])
+
   return (
     <div>
-      <nav className="top-nav">
+      <div className="header-row">
+        <nav className="top-nav" style={{ flex: 1, border: 'none', padding: 0, marginBottom: 0 }}>
         {[
           ['repos', 'Overview'],
           ['repo-detail', 'Repo Detail'],
@@ -538,7 +559,9 @@ export default function App() {
         ].map(([key, label]) => (
           <button key={key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}</button>
         ))}
-      </nav>
+        </nav>
+        <ThemeToggle />
+      </div>
 
       {view === 'repos' && <OverviewView onSelectRepo={id => { setSelectedRepo(id); setView('repo-detail') }} />}
       {view === 'repo-detail' && (
