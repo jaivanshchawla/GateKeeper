@@ -194,3 +194,10 @@ ALL_RULES: dict[str, type[BaseRule]] = {
     "stale_file": StaleFileRule,
     "direct_to_main": DirectToMainRule,
 }
+
+# Merge in content rules (W1.2: all 18 rules in one registry)
+try:
+    from rules.content_rules import ALL_CONTENT_RULES
+    ALL_RULES.update(ALL_CONTENT_RULES)
+except ImportError:
+    pass

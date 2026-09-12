@@ -16,6 +16,7 @@ from rules.rules import ALL_RULES
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "rules": {
+        # Metadata rules (9)
         "large_change": {"max_lines": 500, "severity": "warn"},
         "too_many_files": {"max_files": 20, "severity": "warn"},
         "no_tests": {"severity": "warn", "exempt_paths": ["docs/**", "*.md"]},
@@ -25,6 +26,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "weekend_deploy": {"severity": "info"},
         "stale_file": {"days": 180, "severity": "info"},
         "direct_to_main": {"severity": "warn"},
+        # Content rules (9) — W1.2: all 18 rules in one engine
+        "test_deleted": {"severity": "block"},
+        "assertion_removed": {"severity": "warn"},
+        "dependency_change": {"severity": "warn"},
+        "todo_debt": {"severity": "info"},
+        "debug_leftover": {"severity": "warn"},
+        "large_binary": {"severity": "warn", "max_size_kb": 500},
+        "migration_touch": {"severity": "block"},
+        "error_handling_removed": {"severity": "warn"},
+        "complexity_delta": {"severity": "info"},
     },
     "ml_scoring": {
         "enabled": True,

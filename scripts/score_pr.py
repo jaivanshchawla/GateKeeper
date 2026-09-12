@@ -331,92 +331,57 @@ def main():
     )
     features = extractor.extract_single_commit(repo_path, commit_hash)
 
-    # Prepare feature array
+    # Use shared scoring function (W1.2: ONE implementation)
+    from ml.scoring import evaluate_commit_full
+
     feature_values = [features.get(col, 0) for col in feature_columns]
-    features_array = np.array([feature_values])
-
-    # Get prediction
-    risk_score = float(model.predict_proba(features_array)[0][1])
-    repo_name = os.path.basename(repo_path) if repo_path else ""
-    risk_label = get_risk_label(risk_score, repo_name)
-
-    # Get notable factors (SHAP-based with heuristic fallback)
-    factors = get_notable_factors(features, features_array=features_array, feature_columns=feature_columns)
-
-    # Get SHAP explanations (structured)
-    explanations = []
-    try:
-        from ml.explainer import explain, format_explanation as fmt_exp
-        raw_factors = explain(features_array, feature_columns=feature_columns, top_k=3)
-        human_readable = fmt_exp(raw_factors, features)
-        explanations = [
-            {**f, "human_readable": hr}
-            for f, hr in zip(raw_factors, human_readable)
-        ]
-    except Exception:
-        pass  # Non-fatal: use heuristic factors instead
-
-    # Get author name
     author = features.get("author", "")
+    repo_name = os.path.basename(repo_path) if repo_path else ""
+    touched_files_str = features.get("touched_files", "")
+    file_list = [f.strip() for f in str(touched_files_str).split(",") if f.strip()] if touched_files_str else []
+
+    is_direct = os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF", "").endswith(os.environ.get("GITHUB_REPO_DEFAULT_BRANCH", "main"))
+    commit_ts = features.get("commit_timestamp")
+    dt = datetime.fromtimestamp(commit_ts, tz=timezone.utc) if commit_ts else datetime.now(timezone.utc)
+
+    result = evaluate_commit_full(
+        feature_values=feature_values,
+        repo_name=repo_name,
+        commit_hash=commit_hash,
+        author=author,
+        message=features.get("commit_message", ""),
+        files=file_list,
+        lines_added=features.get("lines_added", 0),
+        lines_deleted=features.get("lines_deleted", 0),
+        files_touched=features.get("files_touched", 0),
+        dirs_touched=features.get("dirs_touched", 0),
+        is_merge=bool(features.get("is_merge", 0)),
+        hour_of_day=dt.hour,
+        day_of_week=dt.weekday(),
+        author_prior_commits=features.get("author_prior_commits", 0),
+        file_revert_count_max=features.get("file_revert_count_max", 0),
+        file_prior_changes_max=features.get("file_prior_changes_max", 0),
+        repo_path=repo_path or "",
+        is_direct_push=is_direct,
+    )
+
+    risk_score = result.risk_score
+    risk_label = result.band
+    rule_results = result.rule_results
+    explanations = result.shap_top3
+    factors = [e.get("human_readable", e.get("description", "")) for e in explanations]
 
     # Get file metadata for per-file table
     touched_files_info = []
     try:
-        touched_files = features.get("touched_files", "")
-        if touched_files:
-            file_list = [f.strip() for f in str(touched_files).split(",") if f.strip()]
-            if hasattr(extractor, "file_touches") and extractor.file_touches:
-                for fp in file_list[:10]:
-                    touches = extractor.file_touches.get(fp, [])
-                    prior = len(touches)
-                    reverts = sum(1 for _, _, msg in touches if "revert" in msg.lower()) if any(len(t) == 3 for t in touches) else 0
-                    touched_files_info.append({
-                        "name": fp,
-                        "prior_changes": prior,
-                        "revert_count": reverts,
-                    })
-            else:
-                for fp in file_list[:10]:
-                    touched_files_info.append({
-                        "name": fp,
-                        "prior_changes": 0,
-                        "revert_count": 0,
-                    })
+        if touched_files_str and hasattr(extractor, "file_touches") and extractor.file_touches:
+            for fp in file_list[:10]:
+                touches = extractor.file_touches.get(fp, [])
+                prior = len(touches)
+                reverts = sum(1 for t in touches if "revert" in (t[2] if len(t) >= 3 else "").lower()) if touches else 0
+                touched_files_info.append({"name": fp, "prior_changes": prior, "revert_count": reverts})
     except Exception:
         pass
-
-    # Run rule engine
-    rule_results = []
-    try:
-        touched_files = features.get("touched_files", "")
-        file_list = [f.strip() for f in str(touched_files).split(",") if f.strip()] if touched_files else []
-        is_direct = os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF", "").endswith(os.environ.get("GITHUB_REPO_DEFAULT_BRANCH", "main"))
-        commit_ts = features.get("commit_timestamp")
-        dt = datetime.fromtimestamp(commit_ts, tz=timezone.utc) if commit_ts else datetime.now(timezone.utc)
-        ctx = CommitContext(
-            hash=commit_hash,
-            author=author,
-            message=features.get("commit_message", ""),
-            files=file_list,
-            lines_added=features.get("lines_added", 0),
-            lines_deleted=features.get("lines_deleted", 0),
-            files_touched=features.get("files_touched", 0),
-            dirs_touched=features.get("dirs_touched", 0),
-            is_merge=bool(features.get("is_merge", 0)),
-            hour_of_day=dt.hour,
-            day_of_week=dt.weekday(),
-            author_prior_commits=features.get("author_prior_commits", 0),
-            file_revert_count_max=features.get("file_revert_count_max", 0),
-            file_prior_changes_max=features.get("file_prior_changes_max", 0),
-            repo_name=os.path.basename(repo_path) if repo_path else "",
-            is_direct_push=is_direct,
-            risk_score=risk_score,
-            risk_label=risk_label,
-        )
-        engine = RuleEngine(load_rules_config())
-        rule_results = engine.evaluate(ctx)
-    except Exception as e:
-        print(f"WARNING: Rule engine failed: {e}", file=sys.stderr)
 
     # Generate markdown
     markdown = format_markdown(

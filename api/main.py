@@ -260,56 +260,47 @@ async def predict(request: PredictionRequest):
         )
     
     try:
-        # Prepare feature array in correct order (Pydantic already validated)
+        from ml.scoring import evaluate_commit_full
+
         feature_values = [getattr(request.features, col) for col in FEATURE_COLUMNS]
-        features_array = np.array([feature_values])
-        
-        # Get prediction probability of risky class (class 1)
-        risk_score = float(model.predict_proba(features_array)[0][1])
-        
-        # Determine risk label using percentile-based thresholds.
-        # Per-repo cutoffs from config.yaml; fallback to _global for unknown repos.
-        repo_name = getattr(request.features, "source_repo", "")
-        repo_thresholds = THRESHOLDS.get(repo_name, DEFAULT_THRESHOLDS)
-        high_cutoff = repo_thresholds["high"]
-        medium_cutoff = repo_thresholds["medium"]
-
-        if risk_score >= high_cutoff:
-            risk_label = "high"
-        elif risk_score >= medium_cutoff:
-            risk_label = "medium"
-        else:
-            risk_label = "low"
-        
-        # Get commit hash if provided (optional field)
         commit_hash = getattr(request.features, "hash", "")
+        repo_name = getattr(request.features, "source_repo", "")
+        touched = getattr(request.features, "touched_files", "")
+        file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
 
-        features_dict = {col: getattr(request.features, col) for col in FEATURE_COLUMNS}
+        result = evaluate_commit_full(
+            feature_values=feature_values,
+            repo_name=repo_name,
+            commit_hash=str(commit_hash) if commit_hash else "",
+            author=getattr(request.features, "author", ""),
+            message=getattr(request.features, "commit_message", ""),
+            files=file_list,
+            lines_added=getattr(request.features, "lines_added", 0),
+            lines_deleted=getattr(request.features, "lines_deleted", 0),
+            files_touched=getattr(request.features, "files_touched", 0),
+            is_merge=bool(getattr(request.features, "is_merge", 0)),
+            hour_of_day=getattr(request.features, "hour_of_day", 12),
+            day_of_week=getattr(request.features, "day_of_week", 0),
+            author_prior_commits=getattr(request.features, "author_prior_commits", 0),
+            file_revert_count_max=int(getattr(request.features, "file_revert_count_max", 0)),
+            file_prior_changes_max=int(getattr(request.features, "file_prior_changes_max", 0)),
+        )
 
-        # SHAP explanations
-        explanations = []
-        if explainer is not None:
-            try:
-                from ml.explainer import explain, format_explanation
-                factors = explain(features_array, top_k=3)
-                human_readable = format_explanation(factors, features_dict)
-                explanations = [
-                    ExplanationItem(
-                        feature=f["feature"],
-                        description=f["description"],
-                        shap_value=f["shap_value"],
-                        direction=f["direction"],
-                        feature_value=f["feature_value"],
-                        human_readable=hr,
-                    )
-                    for f, hr in zip(factors, human_readable)
-                ]
-            except Exception:
-                pass  # Non-fatal: prediction still works without explanations
+        explanations = [
+            ExplanationItem(
+                feature=f["feature"],
+                description=f["description"],
+                shap_value=f["shap_value"],
+                direction=f["direction"],
+                feature_value=f["feature_value"],
+                human_readable=f.get("human_readable", ""),
+            )
+            for f in result.shap_top3
+        ]
 
         return PredictionResponse(
-            risk_score=risk_score,
-            risk_label=risk_label,
+            risk_score=result.risk_score,
+            risk_label=result.band,
             commit_hash=str(commit_hash) if commit_hash else "",
             explanations=explanations,
         )
@@ -340,88 +331,48 @@ async def score_pr(request: ScorePRRequest):
             format_pr_comment,
         )
 
+        from ml.scoring import evaluate_commit_full
+
         commit_scores = []
-        rule_engine = None
-        try:
-            from rules.engine import RuleEngine, load_config as load_rules_config
-            rule_engine = RuleEngine(load_rules_config())
-        except Exception:
-            pass
-
         for req in request.commits:
-            # Score with model
             feature_values = [getattr(req.features, col, 0) for col in FEATURE_COLUMNS]
-            features_array = np.array([feature_values])
-            risk_score = float(model.predict_proba(features_array)[0][1])
-
-            # Determine band
             repo_name = getattr(req.features, "source_repo", request.repo_name, "")
-            repo_thresholds = THRESHOLDS.get(repo_name, DEFAULT_THRESHOLDS)
-            if risk_score >= repo_thresholds["high"]:
-                risk_label = "high"
-            elif risk_score >= repo_thresholds["medium"]:
-                risk_label = "medium"
-            else:
-                risk_label = "low"
+            touched = getattr(req.features, "touched_files", "")
+            file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
 
-            # SHAP explanations
-            explanations = []
-            if explainer is not None:
-                try:
-                    from ml.explainer import explain, format_explanation
-                    features_dict = {col: getattr(req.features, col, 0) for col in FEATURE_COLUMNS}
-                    factors = explain(features_array, top_k=3)
-                    human_readable = format_explanation(factors, features_dict)
-                    explanations = [
-                        {**f, "human_readable": hr}
-                        for f, hr in zip(factors, human_readable)
-                    ]
-                except Exception:
-                    pass
-
-            # Run rules
-            rule_results = []
-            if rule_engine is not None:
-                try:
-                    touched = getattr(req.features, "touched_files", "")
-                    file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
-                    ctx = CommitContext(
-                        hash=req.hash,
-                        author=getattr(req.features, "author", ""),
-                        message=getattr(req.features, "commit_message", ""),
-                        files=file_list,
-                        lines_added=req.features.lines_added,
-                        lines_deleted=req.features.lines_deleted,
-                        files_touched=req.features.files_touched,
-                        dirs_touched=req.features.dirs_touched,
-                        is_merge=bool(getattr(req.features, "is_merge", 0)),
-                        hour_of_day=req.features.hour_of_day,
-                        day_of_week=req.features.day_of_week,
-                        author_prior_commits=req.features.author_prior_commits,
-                        file_revert_count_max=int(getattr(req.features, "file_revert_count_max", 0)),
-                        file_prior_changes_max=int(getattr(req.features, "file_prior_changes_max", 0)),
-                        repo_name=repo_name,
-                        risk_score=risk_score,
-                        risk_label=risk_label,
-                    )
-                    rule_results = rule_engine.evaluate(ctx)
-                except Exception:
-                    pass
+            result = evaluate_commit_full(
+                feature_values=feature_values,
+                repo_name=repo_name,
+                commit_hash=req.hash,
+                author=getattr(req.features, "author", ""),
+                message=getattr(req.features, "commit_message", ""),
+                files=file_list,
+                lines_added=getattr(req.features, "lines_added", 0),
+                lines_deleted=getattr(req.features, "lines_deleted", 0),
+                files_touched=getattr(req.features, "files_touched", 0),
+                dirs_touched=getattr(req.features, "dirs_touched", 0),
+                is_merge=bool(getattr(req.features, "is_merge", 0)),
+                hour_of_day=getattr(req.features, "hour_of_day", 12),
+                day_of_week=getattr(req.features, "day_of_week", 0),
+                author_prior_commits=getattr(req.features, "author_prior_commits", 0),
+                file_revert_count_max=int(getattr(req.features, "file_revert_count_max", 0)),
+                file_prior_changes_max=int(getattr(req.features, "file_prior_changes_max", 0)),
+            )
 
             cs = CommitScore(
                 hash=req.hash,
                 author=getattr(req.features, "author", ""),
                 message=getattr(req.features, "commit_message", ""),
-                risk_score=risk_score,
-                risk_label=risk_label,
-                files=file_list if 'file_list' in dir() else [],
-                lines_added=req.features.lines_added,
-                lines_deleted=req.features.lines_deleted,
-                files_touched=req.features.files_touched,
-                rule_results=rule_results,
-                explanations=explanations,
-                blocked=rule_engine.should_block(rule_results) if rule_engine else False,
-                warning_count=sum(1 for r in rule_results if not r.passed and r.severity == Severity.WARN),
+                risk_score=result.risk_score,
+                risk_label=result.band,
+                files=file_list,
+                lines_added=getattr(req.features, "lines_added", 0),
+                lines_deleted=getattr(req.features, "lines_deleted", 0),
+                files_touched=getattr(req.features, "files_touched", 0),
+                rule_results=result.rule_results,
+                explanations=result.shap_top3,
+                blocked=result.blocked,
+                warning_count=result.warning_count,
             )
             commit_scores.append(cs)
 
