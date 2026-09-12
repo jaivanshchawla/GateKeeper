@@ -13,12 +13,16 @@ Gatekeeper predicts whether a git commit is "risky" — likely to be reverted or
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
 | ROC-AUC (cross-repo LORO) | **0.7885** | Generalization to unseen repos within the training time window |
-| ROC-AUC (out-of-window, mean excl React) | **0.6958** | Production figure — 4/5 repos show forward generalization |
+| ROC-AUC (out-of-window, frozen set, mean excl React) | **0.7033** | Production figure — forward generalization on frozen eval set |
 | PR-AUC lift | +0.246 | Model ranks risky commits above base rate |
 | Top-decile lift | ~1.5-2x | Top 10% of scores have 1.5-2x the precision of random |
 | Brier score | 0.224 | Moderately well-calibrated |
 
-**Two numbers, not one:** The cross-repo LORO (0.7885) tests generalization to unseen repos within the same time window. The out-of-window ROC-AUC tests generalization to future commits (U.6.9, corrected). All 5 repos show forward generalization: k8s (0.7876), django (0.6554), kafka (0.6883), rust (0.6720), react (0.6087). Previous OOW numbers were corrupted by empty-file scoring (u68) and corrected in u69.
+**Two numbers, not one:** The cross-repo LORO (0.7885) tests generalization to unseen repos within the same time window. The out-of-window ROC-AUC tests generalization to future commits on a **frozen eval set** (U.7.0a, committed to `data/oow_eval_set.json`). The frozen set fixes a long-standing measurement instability: OOW commit samples were changing between reports, causing attributed deltas that were actually sampling noise.
+
+**Frozen OOW results (U.7.0a):** django (0.654), react (0.618), kafka (0.679), kubernetes (0.789), rust (0.692). Mean excl. React: 0.703. Mean all 5: 0.686. Previous OOW numbers from reports Y.1 through U.6.9 used varying random samples and are not directly comparable to each other or to these frozen numbers.
+
+**Sample instability disclosure:** OOW measurements before U.7.0a used random sampling with no seed or a different seed each time. The commit sets varied between reports Y.1, Z.1, V5.1, U.6.7b, U.6.8b, and U.6.9. Some deltas attributed to feature fixes (e.g. k8s 0.8812→0.7997 from parity fix, react 0.5542→0.6087) were partly sampling noise. The frozen set eliminates this.
 
 **Pooled AUC caveat:** The pooled ROC-AUC (~0.80) is higher than the per-repo mean (0.7885) because between-repo separation inflates the number. The per-repo table below is the honest presentation. See Protocol Comparison for details.
 
@@ -90,28 +94,30 @@ The headline metric uses **cross-repo leave-one-repo-out (LORO)** evaluation: tr
 | rust | 0.8038 | [0.7833, 0.8223] | |
 | **Mean** | **0.7885** | | **v8 Production — parity-verified extraction** |
 
-### Out-of-Window Evaluation (U.6.9 — corrected scoring, actual files passed)
+### Out-of-Window Evaluation (U.7.0a — frozen eval set)
 
-The most honest metric: test on commits whose committer_date is AFTER the training window end (2026-06-30). These commits were never seen during training or evaluation. **All 5 repos re-scored (U.6.9)** with parity-correct features AND actual file lists passed to the feature extractor (u68's empty-file bug was fixed).
+The most honest metric: test on commits whose committer_date is AFTER the training window end (2026-06-30), with a **permanently frozen commit set** written to `data/oow_eval_set.json`. The frozen set uses deterministic sampling (every-Nth from the post-window commits, minus 7-day censoring at HEAD) so results never change unless the model changes.
 
-| Repo | N (OOW) | Base Rate | OOW ROC-AUC | 95% CI | Offline LORO | Gap |
-|------|---------|-----------|------------|--------|-------------|-----|
-| django | 145 | 34.5% | **0.6554** | [0.5587, 0.7488] | 0.7607 | -0.105 |
-| kafka | 200 | 44.0% | **0.6883** | [0.6149, 0.7635] | 0.8247 | -0.136 |
-| kubernetes | 200 | 70.0% | **0.7876** | [0.7151, 0.8527] | 0.7952 | -0.008 |
-| react | 100 | 53.0% | **0.6087** | [0.4917, 0.7247] | 0.7579 | -0.149 |
-| rust | 200 | 53.0% | **0.6720** | [0.5955, 0.7415] | 0.8038 | -0.132 |
-| **Mean** | | | **0.6824** | | 0.7885 | **-0.106** |
+**Note:** The commit sets in reports Y.1 through U.6.9 used random sampling with varying seeds. Those tables are not directly comparable to each other or to this frozen set.
 
-**Key findings (U.6.9 corrected measurement):**
+| Repo | N (frozen) | Base Rate | OOW ROC-AUC | 95% CI (1000-row resamp.) | Offline LORO | Gap |
+|------|-----------|-----------|------------|--------------------------|-------------|-----|
+| django | 132 | 34.1% | **0.6536** | [0.5555, 0.7492] | 0.7607 | -0.107 |
+| kafka | 160 | 50.0% | **0.6791** | [0.5948, 0.7661] | 0.8247 | -0.146 |
+| kubernetes | 196 | 71.4% | **0.7889** | [0.7148, 0.8551] | 0.7952 | -0.006 |
+| react | 95 | 53.7% | **0.6183** | [0.4966, 0.7443] | 0.7579 | -0.140 |
+| rust | 50 | 66.0% | **0.6916** | [0.5471, 0.8472] | 0.8038 | -0.112 |
+| **Mean** | | | **0.6863** | | 0.7885 | **-0.102** |
+
+**Key findings (frozen set, U.7.0a):**
 - **All 5 repos show forward generalization** — OOW ROC-AUC > 0.5 for every repo.
-- **Kubernetes best** (0.7876, gap -0.008 from LORO) — nearly matches offline performance.
-- **Django, Kafka, Rust cluster** at 0.65-0.69 OOW — modest but real signal, gap ~0.10-0.14 from LORO.
-- **React weakest** (0.6087, CI lower bound 0.49) — marginal signal, CI includes 0.5.
-- **Previous u68 numbers were corrupted** — u68 passed empty files to the feature extractor for django/react/kafka, producing degenerate scores. u69 fixes this.
-- **Previously reported 0.8812 for k8s** was anomalous (exceeded k8s's own LORO of 0.7952, inflated by parity-broken author_prior_commits).
+- **Kubernetes best** (0.7889, gap -0.006 from LORO) — nearly matches offline performance.
+- **Django, Kafka, Rust cluster** at 0.65-0.69 OOW — modest but real signal.
+- **React weakest** (0.6183, CI lower bound 0.50) — marginal signal, CI includes 0.5.
+- **Rust CI is wide** [0.547, 0.847] due to N=50 only — Rust has 3,537 OOW commits but individual scoring takes ~1s per commit; only 50 were scored so far.
+- **Parity tolerance:** author_prior_commits: mean |Δ| < 2, max < 5 between bulk and single-commit paths. Window-start boundary: file-level features may differ by 1 for commits within ~24h of window start (1/50 commits observed).
 
-**What this means:** The model generalizes well to unseen repos within the training window (LORO 0.7885) and retains meaningful signal on future commits for all 5 repos, with a mean gap of -0.106. K8s is production-ready OOW; the other repos would benefit from periodic retraining.
+**What this means:** The model generalizes well to unseen repos within the training window (LORO 0.7885) and retains meaningful signal on future commits for all 5 repos, with a mean gap of -0.102. K8s is production-ready OOW; the other repos would benefit from periodic retraining. The frozen eval set ensures these numbers are stable across reports.
 
 ### Protocol Comparison
 
@@ -119,7 +125,7 @@ The most honest metric: test on commits whose committer_date is AFTER the traini
 |----------|---------|-------|
 | Pooled random 80/20 | ~0.80 | **Inflated** — see below |
 | Cross-repo LORO | **0.7885** | Generalization to unseen repos, same time window |
-| Out-of-window (mean) | **0.6824** | Generalization to future commits — what users experience |
+| Out-of-window (frozen set, mean) | **0.6863** | Generalization to future commits — what users experience (U.7.0a) |
 
 **Why pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The per-repo AUCs range from 0.738 to 0.810, but the pooled number (0.80) sits above three of five repos. The honest headline is the per-repo table and its mean, not the pooled figure. Additionally, temporally adjacent commits from the same author land on both sides of a random split, and `author_prior_commits` is a running counter — creating leakage that cross-repo LORO avoids entirely.
 
@@ -234,13 +240,13 @@ The model AMPLIFIES actual disparity in 4/5 repos (experienced contributors get 
 
 3. **Merge-commit blind spot:** The labeling graph misses file touches by merge commits (100% of Rust bors merges have 0 files in `git log --numstat`). Positive rates for Rust/K8s are slightly deflated.
 
-4. **author_prior_commits residual skew (T.1):** Author identity is now keyed on normalized email (%aE + NFKD + casefold), fixing the display-name splitting bug ("Esteban Küber" vs "Esteban Kuber", "Lauren Tan" vs "lauren"). PyDriller and git log still occasionally report different emails for the same commit (e.g. `tg@trevorgross.com` vs `tmgross@umich.edu`); the SC path overrides with the graph email. Feature parity: 34/35 features at 0/50, author_prior_commits off-by-1-2 at timestamp edges (0.8% of cells).
+4. **author_prior_commits residual skew (T.1):** Author identity is now keyed on normalized email (%aE + NFKD + casefold), fixing the display-name splitting bug ("Esteban Küber" vs "Esteban Kuber", "Lauren Tan" vs "lauren"). PyDriller and git log still occasionally report different emails for the same commit (e.g. `tg@trevorgross.com` vs `tmgross@umich.edu`); the SC path overrides with the graph email. Feature parity: 34/35 features at 0/50, author_prior_commits off-by-1-2 at timestamp edges (0.8% of cells). **Parity tolerances (documented, accepted):** author_prior_commits: mean |Δ| < 2, max < 5 (due to email identity differences between bulk extraction and single-commit extraction). Window-start boundary: file-level features may differ by 1 for commits within ~24h of window start (1/50 commits observed, e.g. react/e6783e7cc94b at 2024-07-01 13:50, 13 hours into the window).
 
 5. **No code understanding:** The model uses only commit metadata (diff size, timing, author history, message keywords). It does not analyze code content, test coverage, or review quality.
 
 6. **Calibration gaps:** 10-bin reliability analysis shows overconfidence in mid-range bins (predicted probabilities systematically higher than observed frequencies for rust, lower for react).
 
-7. **OOW gap (U.6.9 corrected):** All 5 repos show forward generalization (OOW > 0.5), but with a mean gap of -0.106 from LORO. K8s is near-parity (0.7876 vs 0.7952 LORO). React is weakest (0.6087, CI includes 0.5). Previous OOW numbers were corrupted by empty-file scoring in u68 (kafka was degenerate at 0.5000 with zero-width CI). Identity resolution via mailmap was tested: React has no .mailmap (untestable), Rust has 353 aliases merged from 392 .mailmap entries (measured). The u69 OOW measurement used a degeneracy guard (reject <2 distinct scores, <2 label classes, zero-width CI).
+7. **OOW gap (U.7.0a frozen set):** All 5 repos show forward generalization (OOW > 0.5) on a frozen eval set (mean 0.6863, gap -0.102 from LORO 0.7885). K8s is near-parity (0.7889 vs 0.7952). React is weakest (0.6183, CI includes 0.5). Rust CI is wide (N=50 of 3,537 available). The frozen eval set (`data/oow_eval_set.json`) uses deterministic sampling and eliminates measurement instability — prior OOW tables (Y.1 through U.6.9) used varying random samples and are not directly comparable to each other or to this frozen set. Identity resolution via mailmap was tested: React has no .mailmap (untestable), Rust has 353 aliases merged from 392 .mailmap entries. Degeneracy guard: reject <2 distinct scores, <2 label classes, zero-width CI.
 
 8. **Pooled AUC inflates:** Pooling predictions across repos with different score distributions counts between-repo separation as within-repo discrimination. The pooled ROC-AUC (~0.80) sits above three of five per-repo AUCs. The per-repo table is the honest presentation.
 
