@@ -176,3 +176,40 @@ def test_threshold_boundaries():
     for score, expected_label in boundaries:
         actual = get_risk_label(score)
         assert actual == expected_label, f"Score {score}: expected {expected_label}, got {actual}"
+
+
+def test_band_shares_match_percentiles():
+    """Per-repo bands must be within 2pp of 10/15/75 on the training distribution."""
+    import yaml
+    import numpy as np
+    import pandas as pd
+
+    with open("ml/config.yaml") as f:
+        config = yaml.safe_load(f)
+    thresholds = config.get("thresholds", {})
+    feature_cols = config.get("feature_columns", [])
+
+    model = sio.load(
+        "models/gatekeeper_risk_model.skops",
+        trusted=sio.get_untrusted_types(file="models/gatekeeper_risk_model.skops"),
+    )
+
+    df = pd.read_csv("data/commit_features_m1.csv")
+
+    for repo in sorted(df["source_repo"].unique()):
+        rdf = df[df["source_repo"] == repo].copy()
+        X = rdf[feature_cols].fillna(0).values
+        scores = model.predict_proba(X)[:, 1]
+        total = len(scores)
+
+        repo_thr = thresholds.get(repo, thresholds.get("_global", {}))
+        high_cut = repo_thr["high"]
+        medium_cut = repo_thr["medium"]
+
+        high_pct = (scores >= high_cut).mean() * 100
+        medium_pct = ((scores >= medium_cut) & (scores < high_cut)).mean() * 100
+        low_pct = (scores < medium_cut).mean() * 100
+
+        assert abs(high_pct - 10.0) <= 2.0, f"{repo} high={high_pct:.1f}%, expected ~10%"
+        assert abs(medium_pct - 15.0) <= 2.0, f"{repo} medium={medium_pct:.1f}%, expected ~15%"
+        assert abs(low_pct - 75.0) <= 2.0, f"{repo} low={low_pct:.1f}%, expected ~75%"

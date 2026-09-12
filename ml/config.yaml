@@ -55,21 +55,23 @@ label_window_days: 7
 # high: top 10% of that repo's scores, medium: next 15%, low: bottom 75%.
 # _global: fallback for repos not in the training set.
 thresholds:
+  # Computed from 90th and 75th percentiles of training score distribution.
+  # Produces approximately 10% high, 15% medium, 75% low per repo.
   django:
-    high: 0.8029
-    medium: 0.6841
+    high: 0.8936
+    medium: 0.8230
   react:
-    high: 0.8839
-    medium: 0.8042
+    high: 0.9288
+    medium: 0.9002
   rust:
-    high: 0.8632
-    medium: 0.7659
-  kubernetes:
     high: 0.8543
-    medium: 0.7301
+    medium: 0.7539
+  kubernetes:
+    high: 0.8926
+    medium: 0.7901
   kafka:
-    high: 0.8752
-    medium: 0.7573
+    high: 0.9151
+    medium: 0.8630
   _global:
-    high: 0.8619
-    medium: 0.7536
+    high: 0.8936
+    medium: 0.8230
