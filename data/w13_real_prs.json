@@ -1,0 +1,789 @@
+[
+  {
+    "repo": "kubernetes",
+    "title": "Merge pull request #141336 from Rajalakshmi-Girish/fix-TestPreQueueingHint-Metri",
+    "merge_hash": "2220c3853a24",
+    "commit_count": 10,
+    "verdict": "low",
+    "mean_score": 0.31617258955255456,
+    "max_score": 0.38242245693978594,
+    "min_score": 0.2047226619764038,
+    "band_counts": {
+      "low": 10,
+      "medium": 0,
+      "high": 0
+    },
+    "riskiest_commit": "b3bc2ac58fa",
+    "blocked": false,
+    "churn_files": [],
+    "commits": [
+      {
+        "hash": "b3bc2ac58fa",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141440 from liggitt/wait-pod-certificate-deployment-test",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "4abd027fe83",
+        "author": "Jordan Liggitt",
+        "message": "Wait for podcertificate server and client deployment",
+        "score": 0.2186635165522907,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 7,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "643d8f6c393",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141194 from dgrisonnet/events-flake-diagnostic-logging",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "c44d2a82ef7",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141105 from thc1006/fix/kubeletplugin-socket-cleanup-errors",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "4e8291a5cce",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141104 from thc1006/dra-resourceclaim-template-copy",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "7365a940b0e",
+        "author": "thc1006",
+        "message": "resourceclaim: copy template annotations before creating claims",
+        "score": 0.2954410563848979,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 73,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a231bf3f377",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141363 from BenTheElder/go126.6",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "55dc4aaf556",
+        "author": "Benjamin Elder",
+        "message": "upgrade .go-version to 1.26.6",
+        "score": 0.28121362480894185,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 1,
+        "lines_deleted": 1,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "52ba90138eb",
+        "author": "Vyom Yadav",
+        "message": "Fix windows backslash escaping (#141296)",
+        "score": 0.24957275110408164,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 183,
+        "lines_deleted": 6,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "889fcfbcb45",
+        "author": "Damien Grisonnet",
+        "message": "test(events): log event details on TestEventCompatibility failure",
+        "score": 0.2047226619764038,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 12,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      }
+    ]
+  },
+  {
+    "repo": "kubernetes",
+    "title": "Merge pull request #141440 from liggitt/wait-pod-certificate-deployment-test",
+    "merge_hash": "b3bc2ac58fa1",
+    "commit_count": 8,
+    "verdict": "low",
+    "mean_score": 0.3102138627707703,
+    "max_score": 0.38242245693978594,
+    "min_score": 0.17064373123677462,
+    "band_counts": {
+      "low": 8,
+      "medium": 0,
+      "high": 0
+    },
+    "riskiest_commit": "643d8f6c393",
+    "blocked": false,
+    "churn_files": [],
+    "commits": [
+      {
+        "hash": "643d8f6c393",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141194 from dgrisonnet/events-flake-diagnostic-logging",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "c44d2a82ef7",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141105 from thc1006/fix/kubeletplugin-socket-cleanup-errors",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "4e8291a5cce",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141104 from thc1006/dra-resourceclaim-template-copy",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "7365a940b0e",
+        "author": "thc1006",
+        "message": "resourceclaim: copy template annotations before creating claims",
+        "score": 0.2954410563848979,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 73,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a231bf3f377",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141363 from BenTheElder/go126.6",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "55dc4aaf556",
+        "author": "Benjamin Elder",
+        "message": "upgrade .go-version to 1.26.6",
+        "score": 0.28121362480894185,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 1,
+        "lines_deleted": 1,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "889fcfbcb45",
+        "author": "Damien Grisonnet",
+        "message": "test(events): log event details on TestEventCompatibility failure",
+        "score": 0.2047226619764038,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 12,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "3cbbdf254a7",
+        "author": "thc1006",
+        "message": "kubeletplugin: join the socket cleanup error, not the primary one twice",
+        "score": 0.17064373123677462,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 54,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      }
+    ]
+  },
+  {
+    "repo": "kubernetes",
+    "title": "Merge pull request #141194 from dgrisonnet/events-flake-diagnostic-logging",
+    "merge_hash": "643d8f6c393f",
+    "commit_count": 10,
+    "verdict": "high",
+    "mean_score": 0.4077487788166064,
+    "max_score": 0.9567256142294278,
+    "min_score": 0.24957275110408164,
+    "band_counts": {
+      "low": 9,
+      "medium": 0,
+      "high": 1
+    },
+    "riskiest_commit": "ae1d6147433",
+    "blocked": false,
+    "churn_files": [],
+    "commits": [
+      {
+        "hash": "c44d2a82ef7",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141105 from thc1006/fix/kubeletplugin-socket-cleanup-errors",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "4e8291a5cce",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141104 from thc1006/dra-resourceclaim-template-copy",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "7365a940b0e",
+        "author": "thc1006",
+        "message": "resourceclaim: copy template annotations before creating claims",
+        "score": 0.2954410563848979,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 73,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a231bf3f377",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141363 from BenTheElder/go126.6",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "55dc4aaf556",
+        "author": "Benjamin Elder",
+        "message": "upgrade .go-version to 1.26.6",
+        "score": 0.28121362480894185,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 1,
+        "lines_deleted": 1,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "52ba90138eb",
+        "author": "Vyom Yadav",
+        "message": "Fix windows backslash escaping (#141296)",
+        "score": 0.24957275110408164,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 183,
+        "lines_deleted": 6,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "d244fad1200",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141324 from liggitt/min-compatibility-version-test",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "ae1d6147433",
+        "author": "Jordan Liggitt",
+        "message": "Include minCompatibilityVersion info in featuregates yaml",
+        "score": 0.9567256142294278,
+        "band": "high",
+        "files_count": 3,
+        "lines_added": 27,
+        "lines_deleted": 4,
+        "rule_results": [
+          {
+            "rule": "config_and_code",
+            "severity": "warn",
+            "passed": false,
+            "message": "Touches both config/CI and source code"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a76f2bbb5a6",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #140925 from lukaszwojciechowski/fix-TestValidateEvictionStat",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "8c078bc32e9",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141292 from soltysh/issue141288",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      }
+    ]
+  },
+  {
+    "repo": "kubernetes",
+    "title": "Merge pull request #141105 from thc1006/fix/kubeletplugin-socket-cleanup-errors",
+    "merge_hash": "c44d2a82ef7f",
+    "commit_count": 10,
+    "verdict": "high",
+    "mean_score": 0.39383349753153835,
+    "max_score": 0.9567256142294278,
+    "min_score": 0.24326964408910398,
+    "band_counts": {
+      "low": 9,
+      "medium": 0,
+      "high": 1
+    },
+    "riskiest_commit": "ae1d6147433",
+    "blocked": false,
+    "churn_files": [],
+    "commits": [
+      {
+        "hash": "4e8291a5cce",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141104 from thc1006/dra-resourceclaim-template-copy",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "7365a940b0e",
+        "author": "thc1006",
+        "message": "resourceclaim: copy template annotations before creating claims",
+        "score": 0.2954410563848979,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 73,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a231bf3f377",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141363 from BenTheElder/go126.6",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "55dc4aaf556",
+        "author": "Benjamin Elder",
+        "message": "upgrade .go-version to 1.26.6",
+        "score": 0.28121362480894185,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 1,
+        "lines_deleted": 1,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "52ba90138eb",
+        "author": "Vyom Yadav",
+        "message": "Fix windows backslash escaping (#141296)",
+        "score": 0.24957275110408164,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 183,
+        "lines_deleted": 6,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "d244fad1200",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141324 from liggitt/min-compatibility-version-test",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "ae1d6147433",
+        "author": "Jordan Liggitt",
+        "message": "Include minCompatibilityVersion info in featuregates yaml",
+        "score": 0.9567256142294278,
+        "band": "high",
+        "files_count": 3,
+        "lines_added": 27,
+        "lines_deleted": 4,
+        "rule_results": [
+          {
+            "rule": "config_and_code",
+            "severity": "warn",
+            "passed": false,
+            "message": "Touches both config/CI and source code"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a76f2bbb5a6",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #140925 from lukaszwojciechowski/fix-TestValidateEvictionStat",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "8c078bc32e9",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141292 from soltysh/issue141288",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "8f70da82f03",
+        "author": "Maciej Szulik",
+        "message": "test/e2e/apps: Add missing wait for pods readiness in sts test",
+        "score": 0.24326964408910398,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 3,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      }
+    ]
+  },
+  {
+    "repo": "kubernetes",
+    "title": "Merge pull request #141104 from thc1006/dra-resourceclaim-template-copy",
+    "merge_hash": "4e8291a5cce6",
+    "commit_count": 10,
+    "verdict": "high",
+    "mean_score": 0.39203825858538954,
+    "max_score": 0.9567256142294278,
+    "min_score": 0.24326964408910398,
+    "band_counts": {
+      "low": 9,
+      "medium": 0,
+      "high": 1
+    },
+    "riskiest_commit": "ae1d6147433",
+    "blocked": false,
+    "churn_files": [],
+    "commits": [
+      {
+        "hash": "a231bf3f377",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141363 from BenTheElder/go126.6",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "55dc4aaf556",
+        "author": "Benjamin Elder",
+        "message": "upgrade .go-version to 1.26.6",
+        "score": 0.28121362480894185,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 1,
+        "lines_deleted": 1,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "52ba90138eb",
+        "author": "Vyom Yadav",
+        "message": "Fix windows backslash escaping (#141296)",
+        "score": 0.24957275110408164,
+        "band": "low",
+        "files_count": 2,
+        "lines_added": 183,
+        "lines_deleted": 6,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "d244fad1200",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141324 from liggitt/min-compatibility-version-test",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "ae1d6147433",
+        "author": "Jordan Liggitt",
+        "message": "Include minCompatibilityVersion info in featuregates yaml",
+        "score": 0.9567256142294278,
+        "band": "high",
+        "files_count": 3,
+        "lines_added": 27,
+        "lines_deleted": 4,
+        "rule_results": [
+          {
+            "rule": "config_and_code",
+            "severity": "warn",
+            "passed": false,
+            "message": "Touches both config/CI and source code"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "a76f2bbb5a6",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #140925 from lukaszwojciechowski/fix-TestValidateEvictionStat",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "8c078bc32e9",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141292 from soltysh/issue141288",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "8f70da82f03",
+        "author": "Maciej Szulik",
+        "message": "test/e2e/apps: Add missing wait for pods readiness in sts test",
+        "score": 0.24326964408910398,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 3,
+        "lines_deleted": 2,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "94c13676429",
+        "author": "kubernetes-prow[bot]",
+        "message": "Merge pull request #141273 from dims/publishing-rules-1.37",
+        "score": 0.38242245693978594,
+        "band": "low",
+        "files_count": 0,
+        "lines_added": 0,
+        "lines_deleted": 0,
+        "rule_results": [],
+        "blocked": false,
+        "shap_top3": []
+      },
+      {
+        "hash": "d79de57a203",
+        "author": "Davanum Srinivas",
+        "message": "drop rules for 1.33 EOL release",
+        "score": 0.2774886669234099,
+        "band": "low",
+        "files_count": 1,
+        "lines_added": 0,
+        "lines_deleted": 460,
+        "rule_results": [
+          {
+            "rule": "no_tests",
+            "severity": "warn",
+            "passed": false,
+            "message": "No test files included in code change"
+          }
+        ],
+        "blocked": false,
+        "shap_top3": []
+      }
+    ]
+  }
+]
