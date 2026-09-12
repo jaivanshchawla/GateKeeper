@@ -764,8 +764,12 @@ async def get_commit(commit_id: str):
 
 @app.get("/prs")
 async def list_prs():
-    """List scored PRs (from recent data)."""
-    # Return empty for now — PRs are scored on-demand via /score_pr
+    """List scored PRs from pre-scored data."""
+    prs_file = DATA_DIR / "scored_prs.json"
+    if prs_file.exists():
+        with open(prs_file) as f:
+            data = _json.load(f)
+        return data
     return {"prs": []}
 
 

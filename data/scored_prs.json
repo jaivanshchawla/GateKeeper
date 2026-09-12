@@ -1,0 +1,541 @@
+{
+  "prs": [
+    {
+      "id": "django-4c4f8fd7",
+      "number": "4c4f8fd7",
+      "repo": "django",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 6,
+      "total_lines_added": 0,
+      "total_lines_deleted": 20,
+      "mean_score": 0.3112986745977432,
+      "max_score": 0.3112986745977432,
+      "min_score": 0.3112986745977432,
+      "riskiest_sha": "4c4f8fd775c61ad8cfb07b4da244b07000c89edc",
+      "created_at": "2026-08-21T12:24:29+00:00",
+      "commits": [
+        {
+          "hash": "4c4f8fd775c61ad8cfb07b4da244b07000c89edc",
+          "author": "Jacob Walls",
+          "author_email": "jacobtylerwalls@gmail.com",
+          "timestamp": "2026-08-21T12:24:29+00:00",
+          "message": "Removed more versionadded/versionchanged directives for 6.1.",
+          "score": 0.3112986745977432,
+          "band": "low",
+          "lines_added": 0,
+          "lines_deleted": 20,
+          "files_count": 6,
+          "files": [
+            "docs/ref/contrib/gis/db-api.txt",
+            "docs/ref/contrib/gis/forms-api.txt",
+            "docs/ref/contrib/gis/gdal.txt",
+            "docs/ref/contrib/gis/geos.txt",
+            "docs/ref/contrib/gis/model-api.txt",
+            "docs/ref/settings.txt"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "django-1d50f129",
+      "number": "1d50f129",
+      "repo": "django",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 18,
+      "total_lines_deleted": 0,
+      "mean_score": 0.4425277911420741,
+      "max_score": 0.4425277911420741,
+      "min_score": 0.4425277911420741,
+      "riskiest_sha": "1d50f12929f8f2d424f0e7cc6b1f693f590f71a2",
+      "created_at": "2026-08-19T11:52:47+00:00",
+      "commits": [
+        {
+          "hash": "1d50f12929f8f2d424f0e7cc6b1f693f590f71a2",
+          "author": "Sarah Boyce",
+          "author_email": "42296566+sarahboyce@users.noreply.github.com",
+          "timestamp": "2026-08-19T11:52:47+00:00",
+          "message": "Fixed #37258, Refs #36644 -- Documented error when default ordering fields are missing in combined queries.",
+          "score": 0.4425277911420741,
+          "band": "low",
+          "lines_added": 18,
+          "lines_deleted": 0,
+          "files_count": 2,
+          "files": [
+            "docs/releases/6.1.txt",
+            "tests/queries/test_qs_combinators.py"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "django-d992705f",
+      "number": "d992705f",
+      "repo": "django",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 7,
+      "total_lines_added": 144,
+      "total_lines_deleted": 8,
+      "mean_score": 0.5199655748244436,
+      "max_score": 0.5199655748244436,
+      "min_score": 0.5199655748244436,
+      "riskiest_sha": "d992705f9eb56199dc474b77af16474e5ce3d2ab",
+      "created_at": "2026-08-18T18:06:40+00:00",
+      "commits": [
+        {
+          "hash": "d992705f9eb56199dc474b77af16474e5ce3d2ab",
+          "author": "Adam Johnson",
+          "author_email": "me@adamj.eu",
+          "timestamp": "2026-08-18T18:06:40+00:00",
+          "message": "Fixed #37259 -- Restored support for old-signature Model.from_db() overrides.",
+          "score": 0.5199655748244436,
+          "band": "low",
+          "lines_added": 144,
+          "lines_deleted": 8,
+          "files_count": 7,
+          "files": [
+            "django/db/models/query.py",
+            "docs/internals/deprecation.txt",
+            "docs/ref/models/instances.txt",
+            "docs/releases/6.1.1.txt",
+            "docs/releases/6.1.txt",
+            "tests/basic/models.py",
+            "tests/basic/tests.py"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "react-dc631ef5",
+      "number": "dc631ef5",
+      "repo": "react",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 4,
+      "total_lines_added": 505,
+      "total_lines_deleted": 12,
+      "mean_score": 0.39757244410319453,
+      "max_score": 0.39757244410319453,
+      "min_score": 0.39757244410319453,
+      "riskiest_sha": "dc631ef588bd10a63eeb9a1c4c133117755c83d7",
+      "created_at": "2026-08-23T17:46:34+00:00",
+      "commits": [
+        {
+          "hash": "dc631ef588bd10a63eeb9a1c4c133117755c83d7",
+          "author": "dan",
+          "author_email": "dan.abramov@me.com",
+          "timestamp": "2026-08-23T17:46:34+00:00",
+          "message": "[Flight] Outline and dedupe repeated strings (#37147)",
+          "score": 0.39757244410319453,
+          "band": "low",
+          "lines_added": 505,
+          "lines_deleted": 12,
+          "files_count": 4,
+          "files": [
+            "packages/react-client/src/ReactFlightClient.js",
+            "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMEdge-test.js",
+            "packages/react-server/src/ReactFlightServer.js",
+            "scripts/error-codes/codes.json"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "react-675a29c3",
+      "number": "675a29c3",
+      "repo": "react",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 11,
+      "total_lines_added": 990,
+      "total_lines_deleted": 664,
+      "mean_score": 0.4298988388622784,
+      "max_score": 0.4298988388622784,
+      "min_score": 0.4298988388622784,
+      "riskiest_sha": "675a29c3e9869d0706dc5ed08779ae04186bd44f",
+      "created_at": "2026-08-23T15:29:26+00:00",
+      "commits": [
+        {
+          "hash": "675a29c3e9869d0706dc5ed08779ae04186bd44f",
+          "author": "Sebastian \"Sebbie\" Silbermann",
+          "author_email": "sebastian.silbermann@vercel.com",
+          "timestamp": "2026-08-23T15:29:26+00:00",
+          "message": "[ci] Rebuild sizebot on the GitHub Actions token (#37322)",
+          "score": 0.4298988388622784,
+          "band": "low",
+          "lines_added": 990,
+          "lines_deleted": 664,
+          "files_count": 11,
+          "files": [
+            ".eslintrc.js",
+            ".github/workflows/runtime_build_and_test.yml",
+            ".github/workflows/runtime_sizebot_comment.yml",
+            ".gitignore",
+            "dangerfile.js",
+            "package.json",
+            "scripts/sizebot/compare-sizes.js",
+            "scripts/sizebot/pull-request-comment.js",
+            "scripts/sizebot/render-comment.js",
+            "scripts/tasks/danger.js"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "react-055705ca",
+      "number": "055705ca",
+      "repo": "react",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 98,
+      "total_lines_deleted": 6,
+      "mean_score": 0.38808365878381906,
+      "max_score": 0.38808365878381906,
+      "min_score": 0.38808365878381906,
+      "riskiest_sha": "055705ca01766d2a4379261b05e7990a849bdedc",
+      "created_at": "2026-08-22T16:05:44+00:00",
+      "commits": [
+        {
+          "hash": "055705ca01766d2a4379261b05e7990a849bdedc",
+          "author": "Hendrik Liebau",
+          "author_email": "mail@hendrik-liebau.de",
+          "timestamp": "2026-08-22T16:05:44+00:00",
+          "message": "[Flight] Abort the cache signal when debug objects are retained (#37342)",
+          "score": 0.38808365878381906,
+          "band": "low",
+          "lines_added": 98,
+          "lines_deleted": 6,
+          "files_count": 2,
+          "files": [
+            "packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
+            "packages/react-server/src/ReactFlightServer.js"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kafka-61488cf2",
+      "number": "61488cf2",
+      "repo": "kafka",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 3,
+      "total_lines_added": 16,
+      "total_lines_deleted": 18,
+      "mean_score": 0.24799249638553914,
+      "max_score": 0.24799249638553914,
+      "min_score": 0.24799249638553914,
+      "riskiest_sha": "61488cf2c7e65dc5a6e889f5f9374ff1504f5cba",
+      "created_at": "2026-08-23T17:51:24+00:00",
+      "commits": [
+        {
+          "hash": "61488cf2c7e65dc5a6e889f5f9374ff1504f5cba",
+          "author": "Parker Chang",
+          "author_email": "parkerhiphop027@gmail.com",
+          "timestamp": "2026-08-23T17:51:24+00:00",
+          "message": "MINOR: Restore metadata version tests and add IBP_4_5_IV0 (#23244)",
+          "score": 0.24799249638553914,
+          "band": "low",
+          "lines_added": 16,
+          "lines_deleted": 18,
+          "files_count": 3,
+          "files": [
+            "server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java",
+            "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
+            "test-common/test-common-internal-api/src/main/java/org/apache/kafka/common/test/api/ClusterTest.java"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kafka-3d790171",
+      "number": "3d790171",
+      "repo": "kafka",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 8,
+      "total_lines_deleted": 9,
+      "mean_score": 0.1803779535729034,
+      "max_score": 0.1803779535729034,
+      "min_score": 0.1803779535729034,
+      "riskiest_sha": "3d790171db6f3ad6f0c03aec7362a1b83964c21d",
+      "created_at": "2026-08-23T17:10:39+00:00",
+      "commits": [
+        {
+          "hash": "3d790171db6f3ad6f0c03aec7362a1b83964c21d",
+          "author": "majialong",
+          "author_email": "majialoong@gmail.com",
+          "timestamp": "2026-08-23T17:10:39+00:00",
+          "message": "KAFKA-20974 Update refresh_collaborators.py for committers.json (#23247)",
+          "score": 0.1803779535729034,
+          "band": "low",
+          "lines_added": 8,
+          "lines_deleted": 9,
+          "files_count": 2,
+          "files": [
+            "committer-tools/refresh_collaborators.py",
+            "committer-tools/requirements.txt"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kafka-8c556f5d",
+      "number": "8c556f5d",
+      "repo": "kafka",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 76,
+      "total_lines_deleted": 7,
+      "mean_score": 0.1762227064765324,
+      "max_score": 0.1762227064765324,
+      "min_score": 0.1762227064765324,
+      "riskiest_sha": "8c556f5d66def69787a36a41c9f7124e76609640",
+      "created_at": "2026-08-21T16:54:04+00:00",
+      "commits": [
+        {
+          "hash": "8c556f5d66def69787a36a41c9f7124e76609640",
+          "author": "Alieh Saeedi",
+          "author_email": "107070585+aliehsaeedii@users.noreply.github.com",
+          "timestamp": "2026-08-21T16:54:04+00:00",
+          "message": "KAFKA-20850: Add system test for suppress() changelog across the HEADERS boundary (#23075)",
+          "score": 0.1762227064765324,
+          "band": "low",
+          "lines_added": 76,
+          "lines_deleted": 7,
+          "files_count": 2,
+          "files": [
+            "tests/kafkatest/services/streams.py",
+            "tests/kafkatest/tests/streams/streams_application_upgrade_test.py"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kubernetes-7365a940",
+      "number": "7365a940",
+      "repo": "kubernetes",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 73,
+      "total_lines_deleted": 2,
+      "mean_score": 0.2954410563848979,
+      "max_score": 0.2954410563848979,
+      "min_score": 0.2954410563848979,
+      "riskiest_sha": "7365a940b0efe8727d5521e4d29b4b0aad30d40a",
+      "created_at": "2026-08-14T19:07:23+00:00",
+      "commits": [
+        {
+          "hash": "7365a940b0efe8727d5521e4d29b4b0aad30d40a",
+          "author": "thc1006",
+          "author_email": "84045975+thc1006@users.noreply.github.com",
+          "timestamp": "2026-08-14T19:07:23+00:00",
+          "message": "resourceclaim: copy template annotations before creating claims",
+          "score": 0.2954410563848979,
+          "band": "low",
+          "lines_added": 73,
+          "lines_deleted": 2,
+          "files_count": 2,
+          "files": [
+            "pkg/controller/resourceclaim/controller.go",
+            "pkg/controller/resourceclaim/controller_test.go"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kubernetes-52ba9013",
+      "number": "52ba9013",
+      "repo": "kubernetes",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 183,
+      "total_lines_deleted": 6,
+      "mean_score": 0.24957275110408164,
+      "max_score": 0.24957275110408164,
+      "min_score": 0.24957275110408164,
+      "riskiest_sha": "52ba90138eb40cab0987dac73e05c838149bdd1c",
+      "created_at": "2026-08-12T11:19:17+00:00",
+      "commits": [
+        {
+          "hash": "52ba90138eb40cab0987dac73e05c838149bdd1c",
+          "author": "Vyom Yadav",
+          "author_email": "73882557+Vyom-Yadav@users.noreply.github.com",
+          "timestamp": "2026-08-12T11:19:17+00:00",
+          "message": "Fix windows backslash escaping (#141296)",
+          "score": 0.24957275110408164,
+          "band": "low",
+          "lines_added": 183,
+          "lines_deleted": 6,
+          "files_count": 2,
+          "files": [
+            "staging/src/k8s.io/kubectl/pkg/cmd/cp/filespec.go",
+            "staging/src/k8s.io/kubectl/pkg/cmd/cp/filespec_test.go"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "kubernetes-ae1d6147",
+      "number": "ae1d6147",
+      "repo": "kubernetes",
+      "verdict": "high",
+      "commit_count": 1,
+      "file_count": 3,
+      "total_lines_added": 27,
+      "total_lines_deleted": 4,
+      "mean_score": 0.9567256142294278,
+      "max_score": 0.9567256142294278,
+      "min_score": 0.9567256142294278,
+      "riskiest_sha": "ae1d6147433d8303ec132fe46c5abee81e1f6daa",
+      "created_at": "2026-08-11T18:26:56+00:00",
+      "commits": [
+        {
+          "hash": "ae1d6147433d8303ec132fe46c5abee81e1f6daa",
+          "author": "Jordan Liggitt",
+          "author_email": "liggitt@google.com",
+          "timestamp": "2026-08-11T18:26:56+00:00",
+          "message": "Include minCompatibilityVersion info in featuregates yaml",
+          "score": 0.9567256142294278,
+          "band": "high",
+          "lines_added": 27,
+          "lines_deleted": 4,
+          "files_count": 3,
+          "files": [
+            "test/compatibility_lifecycle/cmd/feature_gates.go",
+            "test/compatibility_lifecycle/cmd/feature_gates_test.go",
+            "test/compatibility_lifecycle/reference/versioned_feature_list.yaml"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "rust-be9e4877",
+      "number": "be9e4877",
+      "repo": "rust",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 6,
+      "total_lines_added": 14,
+      "total_lines_deleted": 35,
+      "mean_score": 0.5076304811683515,
+      "max_score": 0.5076304811683515,
+      "min_score": 0.5076304811683515,
+      "riskiest_sha": "be9e4877475be64222dad28b9362af5fb1129adc",
+      "created_at": "2026-08-23T17:46:01+00:00",
+      "commits": [
+        {
+          "hash": "be9e4877475be64222dad28b9362af5fb1129adc",
+          "author": "Philipp Krones",
+          "author_email": "hello@philkrones.com",
+          "timestamp": "2026-08-23T17:46:01+00:00",
+          "message": "Fix clippy::needless_bool fallout",
+          "score": 0.5076304811683515,
+          "band": "low",
+          "lines_added": 14,
+          "lines_deleted": 35,
+          "files_count": 6,
+          "files": [
+            "compiler/rustc_hir_analysis/src/hir_ty_lowering/dyn_trait.rs",
+            "compiler/rustc_mir_transform/src/inline.rs",
+            "compiler/rustc_trait_selection/src/traits/coherence.rs",
+            "compiler/rustc_trait_selection/src/traits/mod.rs",
+            "src/bootstrap/src/core/build_steps/llvm.rs",
+            "src/bootstrap/src/core/build_steps/setup.rs"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "rust-f9d42d43",
+      "number": "f9d42d43",
+      "repo": "rust",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 2,
+      "total_lines_added": 2,
+      "total_lines_deleted": 2,
+      "mean_score": 0.47313511444496636,
+      "max_score": 0.47313511444496636,
+      "min_score": 0.47313511444496636,
+      "riskiest_sha": "f9d42d437d5add923d945738757657f10988b56a",
+      "created_at": "2026-08-23T17:32:21+00:00",
+      "commits": [
+        {
+          "hash": "f9d42d437d5add923d945738757657f10988b56a",
+          "author": "Philipp Krones",
+          "author_email": "hello@philkrones.com",
+          "timestamp": "2026-08-23T17:32:21+00:00",
+          "message": "Bump nightly version -> 2026-08-23",
+          "score": 0.47313511444496636,
+          "band": "low",
+          "lines_added": 2,
+          "lines_deleted": 2,
+          "files_count": 2,
+          "files": [
+            "clippy_utils/README.md",
+            "rust-toolchain.toml"
+          ],
+          "rule_results": []
+        }
+      ]
+    },
+    {
+      "id": "rust-68c66e85",
+      "number": "68c66e85",
+      "repo": "rust",
+      "verdict": "low",
+      "commit_count": 1,
+      "file_count": 4,
+      "total_lines_added": 7,
+      "total_lines_deleted": 13,
+      "mean_score": 0.17260555786185217,
+      "max_score": 0.17260555786185217,
+      "min_score": 0.17260555786185217,
+      "riskiest_sha": "68c66e8518ac8cd26331f90a97d3e371ea9890f1",
+      "created_at": "2026-08-23T12:10:31+00:00",
+      "commits": [
+        {
+          "hash": "68c66e8518ac8cd26331f90a97d3e371ea9890f1",
+          "author": "Ralf Jung",
+          "author_email": "post@ralfj.de",
+          "timestamp": "2026-08-23T12:10:31+00:00",
+          "message": "silence new warning in stdarch",
+          "score": 0.17260555786185217,
+          "band": "low",
+          "lines_added": 7,
+          "lines_deleted": 13,
+          "files_count": 4,
+          "files": [
+            "library/portable-simd/crates/core_simd/src/swizzle_dyn.rs",
+            "library/stdarch/crates/core_arch/src/aarch64/mod.rs",
+            "library/stdarch/crates/core_arch/src/arm_shared/mod.rs",
+            "library/stdarch/crates/core_arch/src/mod.rs"
+          ],
+          "rule_results": []
+        }
+      ]
+    }
+  ]
+}
