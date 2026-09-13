@@ -168,8 +168,9 @@ def evaluate_commit_full(
                 {**f, "human_readable": hr}
                 for f, hr in zip(factors, human_readable)
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            print(f"[scoring] SHAP explain failed (non-fatal): {e}", file=sys.stderr)
 
     # 3. Rules (metadata + content)
     engine = _load_rule_engine()
@@ -230,8 +231,9 @@ def evaluate_commit_full(
         result.warning_count = sum(
             1 for r in result.rule_results if not r.passed and r.severity == Severity.WARN
         )
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"[scoring] Rule engine failed (non-fatal): {e}", file=sys.stderr)
 
     return result
 
