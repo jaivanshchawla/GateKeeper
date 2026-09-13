@@ -39,6 +39,27 @@ rules:
   direct_to_main:
     severity: warn
 
+  # Content rules (9) — require diff text
+  test_deleted:
+    severity: block
+  assertion_removed:
+    severity: warn
+  dependency_change:
+    severity: warn
+  todo_debt:
+    severity: info
+  debug_leftover:
+    severity: warn
+  large_binary:
+    severity: warn
+    max_size_kb: 500
+  migration_touch:
+    severity: block
+  error_handling_removed:
+    severity: warn
+  complexity_delta:
+    severity: info
+
 ml_scoring:
   enabled: true
   band_thresholds:

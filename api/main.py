@@ -813,19 +813,15 @@ async def get_config():
             ))
         except Exception:
             pass
-    # Default config
+    # W1.5: Return all 18 rules (9 metadata + 9 content) from engine defaults
+    from rules.engine import DEFAULT_CONFIG as ENGINE_DEFAULTS
+    rules_with_enabled = {}
+    for name, rule_cfg in ENGINE_DEFAULTS["rules"].items():
+        rules_with_enabled[name] = {**rule_cfg, "enabled": True}
     return {
-        "rules": {
-            "large_change": {"max_lines": 500, "severity": "warn", "enabled": True},
-            "too_many_files": {"max_files": 20, "severity": "warn", "enabled": True},
-            "no_tests": {"severity": "warn", "enabled": True},
-            "config_and_code": {"severity": "warn", "enabled": True},
-            "revert_hotspot": {"revert_count": 3, "window_days": 60, "severity": "block", "enabled": True},
-            "first_touch": {"severity": "info", "enabled": True},
-            "weekend_deploy": {"severity": "info", "enabled": True},
-            "stale_file": {"days": 180, "severity": "info", "enabled": True},
-            "direct_to_main": {"severity": "warn", "enabled": True},
-        },
+        "rules": rules_with_enabled,
+        "ml_scoring": ENGINE_DEFAULTS.get("ml_scoring", {}),
+        "fail_on": ENGINE_DEFAULTS.get("fail_on", ["block"]),
     }
 
 
