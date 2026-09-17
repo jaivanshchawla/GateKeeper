@@ -415,6 +415,29 @@ def main():
             f.write(f"commit_sha={commit_hash}\n")
             f.write(f"blocked={'true' if result.blocked else 'false'}\n")
 
+    # W5.4: Generate SARIF file for GitHub Security tab
+    sarif_path = os.environ.get("SARIF_OUTPUT", "gatekeeper.sarif")
+    if os.environ.get("GITHUB_ACTIONS"):
+        try:
+            from ml.sarif import export_and_write
+            sarif_results = []
+            for rr in rule_results:
+                sarif_results.append({
+                    "rule": rr.rule_name,
+                    "severity": rr.severity,
+                    "passed": rr.passed,
+                    "message": rr.message,
+                    "evidence": rr.evidence,
+                })
+            export_and_write(
+                sarif_results, sarif_path,
+                repo_path=os.environ.get("GITHUB_REPOSITORY", ""),
+                commit_sha=commit_hash,
+            )
+            print(f"SARIF written to {sarif_path}")
+        except Exception as e:
+            print(f"SARIF generation failed (non-fatal): {e}")
+
     return 0
 
 

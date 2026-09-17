@@ -121,3 +121,10 @@ jobs:
               --arg state "$STATE" \
               --arg desc "$DESCRIPTION" \
               '{state: $state, description: $desc, context: "gatekeeper/risk-assessment"}')"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gatekeeper.sarif
+          category: gatekeeper
