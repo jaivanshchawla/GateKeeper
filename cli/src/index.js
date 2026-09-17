@@ -264,9 +264,12 @@ function cmdCheck() {
   }
 
   const config = getEffectiveConfig(gitRoot);
-  console.log(`\n🛡️  Gatekeeper: Scoring ${commits.length} unpushed commit(s)...\n`);
+  const jsonMode = process.argv.includes('--json');
+
+  if (!jsonMode) console.log(`\n🛡️  Gatekeeper: Scoring ${commits.length} unpushed commit(s)...\n`);
 
   let hasBlock = false;
+  const jsonResults = [];
 
   for (const { sha, message } of commits) {
     // Simple local scoring — use git log to extract basic features
@@ -309,25 +312,70 @@ function cmdCheck() {
       violations.push({ rule: 'config_and_code', severity: 'warn', message: 'Touches both config/CI and source code' });
     }
 
-    // Render result
-    const shortSha = sha.slice(0, 8);
-    const shortMsg = message.slice(0, 60);
+    const hasBlocker = violations.some(v => v.severity === 'block');
+    if (hasBlocker) hasBlock = true;
 
-    if (violations.length === 0) {
-      console.log(`  ✅ ${shortSha} ${shortMsg}`);
-    } else {
-      const hasBlocker = violations.some(v => v.severity === 'block');
-      if (hasBlocker) hasBlock = true;
+    const band = hasBlocker ? 'high' : violations.length > 0 ? 'medium' : 'low';
 
-      const icon = hasBlocker ? '🚫' : '⚠️ ';
-      console.log(`  ${icon} ${shortSha} ${shortMsg}`);
-      for (const v of violations) {
-        const sev = v.severity === 'block' ? 'BLOCK' : v.severity.toUpperCase();
-        console.log(`     [${sev}] ${v.rule}: ${v.message}`);
+    // JSON mode: collect structured results
+    jsonResults.push({
+      sha: sha,
+      message: message,
+      band: band,
+      files_changed: filesChanged,
+      lines_added: linesAdded,
+      lines_deleted: linesDeleted,
+      rule_results: violations.map(v => ({
+        rule: v.rule,
+        severity: v.severity,
+        passed: false,
+        message: v.message,
+      })),
+      has_blocker: hasBlocker,
+    });
+
+    // Human-readable mode
+    if (!jsonMode) {
+      const shortSha = sha.slice(0, 8);
+      const shortMsg = message.slice(0, 60);
+      if (violations.length === 0) {
+        console.log(`  ✅ ${shortSha} ${shortMsg}`);
+      } else {
+        const icon = hasBlocker ? '🚫' : '⚠️ ';
+        console.log(`  ${icon} ${shortSha} ${shortMsg}`);
+        for (const v of violations) {
+          const sev = v.severity === 'block' ? 'BLOCK' : v.severity.toUpperCase();
+          console.log(`     [${sev}] ${v.rule}: ${v.message}`);
+        }
       }
     }
   }
 
+  // JSON mode: emit structured output
+  if (jsonMode) {
+    const output = {
+      version: '1.0.0',
+      repo: getGitRemoteUrl()?.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '') || 'unknown',
+      commits: jsonResults,
+      summary: {
+        total: commits.length,
+        passed: jsonResults.filter(r => !r.has_blocker && r.rule_results.length === 0).length,
+        warnings: jsonResults.filter(r => !r.has_blocker && r.rule_results.length > 0).length,
+        blocked: jsonResults.filter(r => r.has_blocker).length,
+      },
+      config: {
+        ml_scoring: config.ml_scoring?.enabled ?? true,
+        fail_on: config.fail_on || ['block'],
+      },
+    };
+    console.log(JSON.stringify(output, null, 2));
+    if (hasBlock && config.fail_on?.includes('block')) {
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Human-readable mode
   console.log('');
 
   if (hasBlock && config.fail_on?.includes('block')) {
@@ -336,7 +384,6 @@ function cmdCheck() {
     process.exit(1);
   }
 
-  const warnings = commits.length; // simplified
   console.log(`Done. ${commits.length} commit(s) scored.`);
 }
 
