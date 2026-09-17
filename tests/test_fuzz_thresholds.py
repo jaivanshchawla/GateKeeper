@@ -194,7 +194,7 @@ def test_band_shares_match_percentiles():
         trusted=sio.get_untrusted_types(file="models/gatekeeper_risk_model.skops"),
     )
 
-    df = pd.read_csv("data/commit_features_m1.csv")
+    df = pd.read_csv("data/commit_features.csv")
 
     for repo in sorted(df["source_repo"].unique()):
         rdf = df[df["source_repo"] == repo].copy()

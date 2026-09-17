@@ -266,13 +266,13 @@ class TestDirectToMainRule:
 
 class TestRuleEngine:
     def test_all_rules_registered(self):
-        assert len(ALL_RULES) == 9
+        assert len(ALL_RULES) == 18  # 9 metadata + 9 content rules
 
     def test_engine_with_defaults(self):
         engine = RuleEngine()
         ctx = make_ctx()
         results = engine.evaluate(ctx)
-        assert len(results) == 9  # all rules evaluated
+        assert len(results) == 18  # all 18 rules evaluated
 
     def test_engine_no_blocks(self):
         engine = RuleEngine()
