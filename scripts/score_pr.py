@@ -412,6 +412,8 @@ def main():
         with open(output_file, "a") as f:
             f.write(f"risk_score={risk_score:.4f}\n")
             f.write(f"risk_label={risk_label}\n")
+            f.write(f"commit_sha={commit_hash}\n")
+            f.write(f"blocked={'true' if result.blocked else 'false'}\n")
 
     return 0
 

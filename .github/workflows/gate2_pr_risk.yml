@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  statuses: write
 
 jobs:
   score-pr:
@@ -73,3 +74,50 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: /tmp/pr_comment.md
           edit-mode: replace
+
+      - name: Post status check
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine state from scoring output
+          RISK_LABEL=$(grep '^risk_label=' /tmp/score_output.txt | head -1 | cut -d= -f2)
+          RISK_SCORE=$(grep '^risk_score=' /tmp/score_output.txt | head -1 | cut -d= -f2)
+          BLOCKED=$(grep '^blocked=' /tmp/score_output.txt | head -1 | cut -d= -f2)
+          
+          if [ -z "$RISK_LABEL" ]; then
+            echo "No risk_label found, skipping status check"
+            exit 0
+          fi
+          
+          # Map band + block to GitHub state
+          if [ "$BLOCKED" = "true" ] || [ "$RISK_LABEL" = "high" ]; then
+            STATE="failure"
+          elif [ "$RISK_LABEL" = "medium" ]; then
+            STATE="neutral"
+          else
+            STATE="success"
+          fi
+          
+          case "$RISK_LABEL" in
+            high) DISPLAY="HIGH RISK" ;;
+            medium) DISPLAY="ELEVATED" ;;
+            *) DISPLAY="NOT FLAGGED" ;;
+          esac
+          
+          SCORE_PCT=$(echo "$RISK_SCORE" | awk '{printf "%.1f%%", $1 * 100}')
+          DESCRIPTION="${DISPLAY} (${SCORE_PCT})"
+          
+          echo "State: $STATE"
+          echo "Description: $DESCRIPTION"
+          
+          # Post status check
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
+            -d "$(jq -n \
+              --arg state "$STATE" \
+              --arg desc "$DESCRIPTION" \
+              '{state: $state, description: $desc, context: "gatekeeper/risk-assessment"}')"
