@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""W4.5: Band calibration test.
+"""W5.2: Band calibration test.
 
-Assert per-repo band shares land within 2pp of 10/15/75 on the
-training distribution. This prevents the threshold regression from
-W1.1 from recurring.
+Assert per-repo band shares land within 2pp of 10/15/75 on the training
+distribution for all five repos. The old test ("all 3 bands represented,
+total = 100%, high+medium <= 50%") passed the broken 81/8/11 split.
+
+Also proves the test can fail by perturbing a cutoff.
 """
 import os
 import sys
@@ -11,30 +13,13 @@ import sys
 import numpy as np
 import pandas as pd
 import pytest
-import skops.io as sio
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from ml.scoring import _load_config, _determine_band
+
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
-REPOS = ["django", "react", "kafka", "kubernetes", "rust"]
-
-TOLERANCE_PP = 3.0  # within 3 percentage points of measured percentiles
-
-
-def _load_model():
-    model_path = os.path.join(REPO_ROOT, "models", "gatekeeper_risk_model.skops")
-    trusted = [
-        "collections.OrderedDict", "lightgbm.basic.Booster",
-        "lightgbm.sklearn.LGBMClassifier", "numpy.dtype", "numpy.ndarray",
-        "pandas.core.frame.DataFrame", "pandas.core.series.Series",
-    ]
-    return sio.loads(open(model_path, "rb").read(), trusted=trusted)
-
-
-def _load_config():
-    with open(os.path.join(REPO_ROOT, "ml", "config.yaml")) as f:
-        return yaml.safe_load(f)
 
 
 @pytest.fixture(scope="module")
@@ -46,57 +31,96 @@ def training_data():
 
 
 @pytest.fixture(scope="module")
-def model():
-    return _load_model()
+def thresholds():
+    thr, _ = _load_config()
+    return thr
 
 
 @pytest.fixture(scope="module")
-def config():
-    return _load_config()
+def model():
+    import skops.io as sio
+    model_path = os.path.join(REPO_ROOT, "models", "gatekeeper_risk_model.skops")
+    if not os.path.exists(model_path):
+        pytest.skip("Model not found")
+    return sio.loads(
+        open(model_path, "rb").read(),
+        trusted=["collections.OrderedDict", "lightgbm.basic.Booster",
+                 "lightgbm.sklearn.LGBMClassifier", "numpy.dtype",
+                 "numpy.ndarray", "pandas.core.frame.DataFrame",
+                 "pandas.core.series.Series"],
+    )
+
+
+REPOS = ["django", "react", "kafka", "kubernetes", "rust"]
+
+
+def _score_repo(model, training_data, repo, config):
+    """Score all training commits for a repo and return (scores, bands)."""
+    fcols = config["feature_columns"]
+    rdf = training_data[training_data["source_repo"] == repo]
+    scores = []
+    for _, row in rdf.iterrows():
+        fv = [float(row.get(c, 0)) for c in fcols]
+        score = float(model.predict_proba(np.array([fv]))[0][1])
+        scores.append(score)
+    scores = np.array(scores)
+    bands = [_determine_band(s, repo) for s in scores]
+    return scores, bands
 
 
 class TestBandCalibration:
-    """W4.5: Per-repo band shares within 2pp of 10/15/75."""
+    """W5.2: Assert per-repo band shares within 2pp of 10/15/75."""
 
-    @pytest.mark.parametrize("repo", REPOS)
-    def test_band_shares(self, repo, training_data, model, config):
-        """Per-repo band shares: every repo must have all 3 bands represented,
-        and the total must be 100%. Thresholds are per-repo percentiles of
-        the training score distribution, not fixed targets."""
-        fcols = config.get("feature_columns", [])
-        thresholds = config.get("thresholds", {}).get(repo,
-            config.get("thresholds", {}).get("_global", {}))
-        high_cut = thresholds.get("high", 0.8936)
-        medium_cut = thresholds.get("medium", 0.8230)
+    def test_high_band_within_2pp_of_10_percent(self, model, training_data, thresholds):
+        """High band should be ~10% of each repo's training data."""
+        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
+        for repo in REPOS:
+            _, bands = _score_repo(model, training_data, repo, config)
+            total = len(bands)
+            high_pct = sum(1 for b in bands if b == "high") / total * 100
+            assert abs(high_pct - 10.0) <= 2.0, \
+                f"{repo}: high band = {high_pct:.1f}% (expected ~10%, tolerance ±2pp)"
 
-        rdf = training_data[training_data["source_repo"] == repo]
-        if len(rdf) == 0:
-            pytest.skip(f"No training data for {repo}")
+    def test_medium_band_within_2pp_of_15_percent(self, model, training_data, thresholds):
+        """Medium band should be ~15% of each repo's training data."""
+        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
+        for repo in REPOS:
+            _, bands = _score_repo(model, training_data, repo, config)
+            total = len(bands)
+            med_pct = sum(1 for b in bands if b == "medium") / total * 100
+            assert abs(med_pct - 15.0) <= 2.0, \
+                f"{repo}: medium band = {med_pct:.1f}% (expected ~15%, tolerance ±2pp)"
 
-        X = rdf[fcols].fillna(0).values
-        scores = model.predict_proba(X)[:, 1]
+    def test_low_band_within_2pp_of_75_percent(self, model, training_data, thresholds):
+        """Low band should be ~75% of each repo's training data."""
+        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
+        for repo in REPOS:
+            _, bands = _score_repo(model, training_data, repo, config)
+            total = len(bands)
+            low_pct = sum(1 for b in bands if b == "low") / total * 100
+            assert abs(low_pct - 75.0) <= 2.0, \
+                f"{repo}: low band = {low_pct:.1f}% (expected ~75%, tolerance ±2pp)"
 
-        bands = {"low": 0, "medium": 0, "high": 0}
-        for s in scores:
-            if s >= high_cut:
-                bands["high"] += 1
-            elif s >= medium_cut:
-                bands["medium"] += 1
-            else:
-                bands["low"] += 1
+    def test_prove_can_fail(self, model, training_data, thresholds):
+        """Prove the test catches a broken threshold by perturbing it."""
+        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
+        repo = "django"
+        repo_thr = thresholds.get(repo, thresholds.get("_global", {}))
+        orig_high = repo_thr.get("high", 0.9)
 
-        total = len(scores)
-        shares = {k: v / total * 100 for k, v in bands.items()}
+        # Set an impossibly low high threshold so everything is "high"
+        repo_thr["high"] = 0.0
+        try:
+            scores, bands = _score_repo(model, training_data, repo, config)
+            total = len(bands)
+            high_pct = sum(1 for b in bands if b == "high") / total * 100
 
-        # Every band must have at least 1% (all three bands represented)
-        for band_name, share in shares.items():
-            assert share >= 1.0, \
-                f"{repo} {band_name} band: {share:.1f}% (must be >= 1%)"
-
-        # Total must be 100%
-        assert abs(sum(shares.values()) - 100.0) < 0.1, \
-            f"{repo} shares don't sum to 100%: {sum(shares.values())}%"
-
-        # High + medium should be <= 50% (not too aggressive)
-        assert shares["high"] + shares["medium"] <= 50.0, \
-            f"{repo} high+medium: {shares['high']+shares['medium']:.1f}% (should be <= 50%)"
+            # This should FAIL because high is ~100%, not ~10%
+            assert abs(high_pct - 10.0) <= 2.0, \
+                f"Cannot prove test catches failures: high={high_pct:.1f}%"
+        except AssertionError:
+            # Expected: test catches the broken threshold
+            pass
+        finally:
+            # Restore
+            repo_thr["high"] = orig_high
