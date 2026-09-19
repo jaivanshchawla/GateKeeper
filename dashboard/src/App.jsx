@@ -5,7 +5,7 @@ import {
   AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
 
-const API = import.meta.env.VITE_API_URL || '/api'
+const API = import.meta.env.VITE_API_URL || ''
 const BAND_COLORS = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' }
 const BAND_BG = { high: 'rgba(239,68,68,0.12)', medium: 'rgba(245,158,11,0.12)', low: 'rgba(34,197,94,0.12)' }
 const BAND_DISPLAY = { high: 'HIGH RISK', medium: 'ELEVATED', low: 'NOT FLAGGED' }
@@ -472,9 +472,26 @@ function ModelHealthView() {
       <div className="stats-grid">
         <StatCard value={health?.version || 'v8'} label="Model Version" />
         <StatCard value={health?.roc_auc ? health.roc_auc.toFixed(3) : '-'} label="ROC-AUC (LORO)" />
-        <StatCard value={health?.oow_auc ? health.oow_auc.toFixed(3) : '-'} label="ROC-AUC (Out-of-Window)" />
+        <StatCard value={health?.oow_auc ? health.oow_auc.toFixed(3) : '-'} label="ROC-AUC (OOW)" />
         <StatCard value={health?.n_features || 35} label="Features" />
       </div>
+
+      {health?.per_repo_oow && (
+        <div className="card">
+          <h2>Per-Repo Out-of-Window ROC-AUC (W7.2)</h2>
+          <table>
+            <thead><tr><th>Repo</th><th>OOW ROC-AUC</th></tr></thead>
+            <tbody>
+              {Object.entries(health.per_repo_oow).map(([name, auc]) => (
+                <tr key={name}>
+                  <td><strong>{name}</strong></td>
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{auc.toFixed(3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {driftRepos.length > 0 && (
         <div className="card">
@@ -509,7 +526,8 @@ function ModelHealthView() {
       <div className="card">
         <h2>Known Limitations</h2>
         <ul className="file-list">
-          <li><strong>React divergence:</strong> OOW ROC-AUC 0.5542, CI includes 0.5 — no measurable signal post-window</li>
+          <li><strong>React OOW:</strong> ROC-AUC 0.581 — weakest out-of-window performance (W7.2 full-N)</li>
+          <li><strong>Mean OOW ROC-AUC:</strong> 0.620 across all 5 repos (down from 0.789 LORO)</li>
           <li><strong>Band-share drift:</strong> Django 7.2%, React 17.8%, Kafka 16.4%, K8s 15.1%, Rust 11.4% — repos above 10% score higher than training</li>
           <li><strong>Merge commits:</strong> git log --numstat returns 0 files for merges — known limitation, labels incomplete for merge-heavy repos</li>
           <li><strong>Calibration:</strong> Brier 0.224 — scores are rankings, not probabilities</li>
@@ -520,8 +538,15 @@ function ModelHealthView() {
 }
 
 // ── Theme Toggle ─────────────────────────────────────────────
+function getInitialTheme() {
+  const saved = localStorage.getItem('gk-theme')
+  if (saved) return saved
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'
+  return 'dark'
+}
+
 function ThemeToggle() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('gk-theme') || 'dark')
+  const [theme, setTheme] = useState(getInitialTheme)
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('gk-theme', theme)
@@ -541,8 +566,7 @@ export default function App() {
 
   // Initialize theme on mount
   useEffect(() => {
-    const saved = localStorage.getItem('gk-theme') || 'dark'
-    document.documentElement.setAttribute('data-theme', saved)
+    document.documentElement.setAttribute('data-theme', getInitialTheme())
   }, [])
 
   return (

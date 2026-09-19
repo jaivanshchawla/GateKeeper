@@ -97,6 +97,7 @@ class Features(BaseModel):
 class PredictionRequest(BaseModel):
     """Request model for prediction endpoint."""
     features: Features
+    repo_name: str = ""
 
 class ExplanationItem(BaseModel):
     """A single SHAP explanation factor."""
@@ -271,7 +272,7 @@ async def predict(request: PredictionRequest):
 
         feature_values = [getattr(request.features, col) for col in FEATURE_COLUMNS]
         commit_hash = getattr(request.features, "hash", "")
-        repo_name = getattr(request.features, "source_repo", "")
+        repo_name = request.repo_name or getattr(request.features, "source_repo", "")
         touched = getattr(request.features, "touched_files", "")
         file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
 
@@ -343,7 +344,7 @@ async def score_pr(request: ScorePRRequest):
         commit_scores = []
         for req in request.commits:
             feature_values = [getattr(req.features, col, 0) for col in FEATURE_COLUMNS]
-            repo_name = getattr(req.features, "source_repo", request.repo_name, "")
+            repo_name = request.repo_name or getattr(req.features, "source_repo", "")
             touched = getattr(req.features, "touched_files", "")
             file_list = [f.strip() for f in str(touched).split("|") if f.strip()] if touched else []
 
@@ -843,10 +844,17 @@ async def model_health():
     return {
         "version": "v8",
         "roc_auc": 0.7885,
-        "oow_auc": 0.6824,
+        "oow_auc": 0.6196,
         "n_features": 35,
         "training_repos": 5,
         "training_commits": 10000,
+        "per_repo_oow": {
+            "django": 0.660,
+            "react": 0.581,
+            "kafka": 0.633,
+            "kubernetes": 0.650,
+            "rust": 0.574,
+        },
     }
 
 
@@ -879,6 +887,165 @@ async def drift_status():
                 "drifted_features": [],
             }
     return {"repos": repos_out}
+
+
+# ── W7.3: Issue CRUD + Stats (migrated from Flask) ──
+# These were previously served by webhook/routes/dashboard.py (Flask).
+# Now consolidated into the single FastAPI backend.
+
+import json as _json_issues
+from datetime import datetime as _dt
+
+
+@app.post("/issues")
+async def create_issue(data: dict):
+    """Log a new issue from Gates 1-3."""
+    required = ["gate", "type", "repo"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        raise HTTPException(400, f"Missing required fields: {missing}")
+    if data["gate"] not in [1, 2, 3]:
+        raise HTTPException(400, "Gate must be 1, 2, or 3")
+    db = _get_db()
+    if not db:
+        raise HTTPException(503, "Database not available")
+    try:
+        from webhook.models import Issue
+        issue = Issue(
+            gate=data["gate"],
+            type=data["type"],
+            repo=data["repo"],
+            status=data.get("status", "open"),
+            details=data.get("details"),
+            commit_hash=data.get("commit_hash"),
+            risk_score=data.get("risk_score"),
+        )
+        db.add(issue)
+        db.commit()
+        db.refresh(issue)
+        return {"message": "Issue created", "issue": issue.to_dict()}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+
+@app.get("/issues")
+async def list_issues(status: str = None, repo: str = None, limit: int = 100, offset: int = 0):
+    """List issues with optional filters."""
+    db = _get_db()
+    if not db:
+        raise HTTPException(503, "Database not available")
+    try:
+        from webhook.models import Issue
+        from sqlalchemy import desc
+        query = db.query(Issue)
+        if status:
+            query = query.filter(Issue.status == status)
+        if repo:
+            query = query.filter(Issue.repo == repo)
+        query = query.order_by(desc(Issue.created_at))
+        total = query.count()
+        issues = query.offset(offset).limit(limit).all()
+        return {
+            "issues": [issue.to_dict() for issue in issues],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    finally:
+        db.close()
+
+
+@app.patch("/issues/{issue_id}")
+async def toggle_issue_status(issue_id: int):
+    """Toggle issue status between open and resolved."""
+    db = _get_db()
+    if not db:
+        raise HTTPException(503, "Database not available")
+    try:
+        from webhook.models import Issue
+        issue = db.query(Issue).filter(Issue.id == issue_id).first()
+        if not issue:
+            raise HTTPException(404, "Issue not found")
+        issue.status = "resolved" if issue.status == "open" else "open"
+        issue.updated_at = _dt.utcnow()
+        db.commit()
+        db.refresh(issue)
+        return {"message": f"Issue status toggled to {issue.status}", "issue": issue.to_dict()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        db.close()
+
+
+@app.get("/issues/stats")
+async def issue_stats(days: int = 30):
+    """Get daily issue counts for the last N days, grouped by status."""
+    db = _get_db()
+    if not db:
+        raise HTTPException(503, "Database not available")
+    try:
+        from webhook.models import Issue
+        from sqlalchemy import desc, func
+        start_date = _dt.utcnow() - timedelta(days=days)
+        stats = (
+            db.query(
+                func.date(Issue.created_at).label("date"),
+                Issue.status,
+                func.count(Issue.id).label("count"),
+            )
+            .filter(Issue.created_at >= start_date)
+            .group_by(func.date(Issue.created_at), Issue.status)
+            .order_by(func.date(Issue.created_at))
+            .all()
+        )
+        daily = {}
+        for date, st, count in stats:
+            ds = date.isoformat() if hasattr(date, "isoformat") else str(date)
+            if ds not in daily:
+                daily[ds] = {"date": ds, "open": 0, "resolved": 0}
+            daily[ds][st] = count
+        result = sorted(daily.values(), key=lambda x: x["date"])
+        total_open = db.query(Issue).filter(Issue.status == "open").count()
+        total_resolved = db.query(Issue).filter(Issue.status == "resolved").count()
+        return {
+            "daily": result,
+            "totals": {"open": total_open, "resolved": total_resolved, "total": total_open + total_resolved},
+            "period_days": days,
+        }
+    finally:
+        db.close()
+
+
+# ── W7.3: Static dashboard file serving ──
+# Serves the React build directly from FastAPI, eliminating the proxy.
+
+DASHBOARD_DIST = PROJECT_ROOT / "dashboard" / "dist"
+
+
+@app.get("/{full_path:path}")
+async def serve_dashboard(full_path: str):
+    """Serve static dashboard files with SPA fallback."""
+    if not DASHBOARD_DIST.exists():
+        raise HTTPException(404, "Dashboard not built. Run: cd dashboard && npm run build")
+    file_path = DASHBOARD_DIST / full_path
+    if file_path.is_file():
+        import mimetypes
+        mime, _ = mimetypes.guess_type(str(file_path))
+        content = file_path.read_bytes()
+        from fastapi.responses import Response
+        return Response(content=content, media_type=mime or "application/octet-stream")
+    # SPA fallback: serve index.html for any unmatched route
+    index = DASHBOARD_DIST / "index.html"
+    if index.exists():
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(index.read_text())
+    raise HTTPException(404, "Dashboard not built")
 
 
 if __name__ == "__main__":

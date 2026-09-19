@@ -257,6 +257,23 @@ def main() -> None:
         repo_urls=args.repo_urls,
     )
 
+    # ── W7.5: Auto-export production model after pipeline succeeds ──
+    # register_model.py writes to a KFP artifact path. The API and Gate 2
+    # load from models/gatekeeper_risk_model.skops. This call syncs them.
+    print("\n" + "=" * 60)
+    print("Exporting production model...")
+    print("=" * 60)
+    try:
+        from ml.export_model import export_production_model
+        success = export_production_model()
+        if success:
+            print("Production model exported successfully.")
+        else:
+            print("WARNING: Production model export failed.")
+    except Exception as e:
+        print(f"WARNING: Production model export failed: {e}")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()
