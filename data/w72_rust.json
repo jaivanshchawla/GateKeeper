@@ -1,0 +1,44 @@
+{
+  "metrics": {
+    "n": 3537,
+    "base_rate": 0.6997,
+    "bands": {
+      "high": {
+        "n": 1167,
+        "risky_rate": 0.7232,
+        "precision": 0.7232,
+        "ci": [
+          0.6969,
+          0.7481
+        ],
+        "lift": 1.03
+      },
+      "medium": {
+        "n": 1793,
+        "risky_rate": 0.7356,
+        "precision": 0.7356,
+        "ci": [
+          0.7147,
+          0.7555
+        ],
+        "lift": 1.05
+      },
+      "low": {
+        "n": 577,
+        "risky_rate": 0.5407,
+        "precision": 0.5407,
+        "ci": [
+          0.4999,
+          0.581
+        ],
+        "lift": 0.77
+      }
+    },
+    "roc_auc": 0.5743,
+    "roc_auc_ci": [
+      0.5534,
+      0.5955
+    ]
+  },
+  "scored_count": 3537
+}
