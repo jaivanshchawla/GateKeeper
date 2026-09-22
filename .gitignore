@@ -46,3 +46,5 @@ repos/
 
 # MLflow database backups
 mlflow.db.backup-*
+# Node (dashboard)
+node_modules/

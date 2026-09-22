@@ -549,10 +549,15 @@ function ThemeToggle() {
   const [theme, setTheme] = useState(getInitialTheme)
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('gk-theme', theme)
   }, [theme])
   return (
-    <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+    <button className="theme-toggle" onClick={() => setTheme(t => {
+      const next = t === 'dark' ? 'light' : 'dark'
+      // Persist ONLY on explicit toggle, so prefers-color-scheme keeps
+      // winning until the user actually chooses a theme.
+      localStorage.setItem('gk-theme', next)
+      return next
+    })}>
       {theme === 'dark' ? '☀' : '☾'} {theme === 'dark' ? 'Light' : 'Dark'}
     </button>
   )
@@ -590,7 +595,7 @@ export default function App() {
       {view === 'repos' && <OverviewView onSelectRepo={id => { setSelectedRepo(id); setView('repo-detail') }} />}
       {view === 'repo-detail' && (
         <RepoDetailView
-          repoId={selectedRepo}
+          repoId={selectedRepo || 'django'}
           onSelectCommit={id => { setSelectedCommit(id); setView('commit-detail') }}
           onBack={() => setView('repos')}
         />
