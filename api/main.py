@@ -495,13 +495,23 @@ REPO_MAP = {n: REPOS_DIR / n for n in REPO_NAMES}
 
 
 def _get_db():
-    """Try Postgres, fall back to None."""
+    """Try Postgres, fall back to None.
+
+    Logs the failure with context (W4.3): a silent None here once hid a
+    missing psycopg2 driver in the slim image for a whole session.
+    """
     try:
         from webhook.models import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
         return db
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("gatekeeper.api").warning(
+            "Postgres unavailable, DB endpoints will return 503: %s: %s",
+            type(e).__name__, e,
+        )
         return None
 
 
@@ -1033,7 +1043,10 @@ async def serve_dashboard(full_path: str):
     """Serve static dashboard files with SPA fallback."""
     if not DASHBOARD_DIST.exists():
         raise HTTPException(404, "Dashboard not built. Run: cd dashboard && npm run build")
-    file_path = DASHBOARD_DIST / full_path
+    # Resolve and reject paths that escape dist/ (path traversal guard)
+    file_path = (DASHBOARD_DIST / full_path).resolve()
+    if not str(file_path).startswith(str(DASHBOARD_DIST.resolve())):
+        raise HTTPException(404, "Not found")
     if file_path.is_file():
         import mimetypes
         mime, _ = mimetypes.guess_type(str(file_path))

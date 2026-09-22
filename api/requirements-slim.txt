@@ -11,3 +11,5 @@ mlflow
 prometheus-fastapi-instrumentator
 requests
 gunicorn
+# Postgres driver for the consolidated W7.3 endpoints (issues, repos, commits)
+psycopg2-binary
