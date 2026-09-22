@@ -131,8 +131,10 @@ const VIEWS = [
   },
   {
     name: 'commit-detail',
-    // repo-detail → first "Detail" button in the commits table
+    // repo-detail → wait for rows to render → first "Detail" button
     nav: `(${NAV})('Repo Detail')`,
+    waitBefore: "document.querySelectorAll('table tbody tr .toggle-btn').length > 0",
+    waitBeforeLabel: 'repo rows for detail click',
     after: `() => { const b = [...document.querySelectorAll('table tbody tr .toggle-btn')][0]; b && b.click() }`,
     ready: "document.querySelector('h1')?.textContent?.startsWith('Commit')",
     readyLabel: 'commit header',
@@ -193,6 +195,7 @@ for (const theme of ['light', 'dark']) {
         "document.documentElement.getAttribute('data-theme')")
       if (themeApplied !== theme) throw new Error(`theme not applied (got ${themeApplied})`)
       if (view.nav !== "'no-op'") { await evaluate(view.nav); await sleep(400) }
+      if (view.waitBefore) await waitFor(view.waitBefore, view.waitBeforeLabel || 'precondition')
       if (view.after) { await evaluate(`(${view.after})()`); await sleep(400) }
       await waitFor(view.ready, view.readyLabel)
       await sleep(600)               // charts settle
