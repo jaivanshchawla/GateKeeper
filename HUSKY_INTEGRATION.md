@@ -350,8 +350,16 @@ Carried forward, **not** fixed on this branch:
   least reported rather than silently ignored.
 - **The `suite` CI job installs a dependency subset, not `requirements.txt`.**
   `tests/` does not need tensorflow, feast or kfp, and pulling them turns a
-  one-minute job into a ten-minute one. If a test ever needs one of them, the
-  job will fail loudly and the list needs the entry.
+  one-minute job into a ten-minute one. The list was derived by walking the
+  import graph from `tests/` rather than guessed, which is how `httpx` was kept
+  — nothing imports it, but starlette's `TestClient` needs it at runtime. If a
+  test ever needs a new package, the job fails loudly and the list needs it.
+- **`pre-push` runs the whole suite, which is ~65s warm but ran ~525s during a
+  push under load.** The variance is contention (Gate 1's feature extraction
+  plus the push itself), not the tests. `GATEKEEPER_HOOK_TESTS=0` skips the
+  stage. Scoping the test stage to the test files affected by the outgoing diff
+  — the way ruff is already scoped — would be the next improvement, though it
+  needs a dependency map from source files to tests to be trustworthy.
 - **`gate1` and the other npm scripts still call Python scripts by path.**
   That is correct for them (they set their own `sys.path`), but it is a second
   invocation convention next to the hooks' `-m` one.

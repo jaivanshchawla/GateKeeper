@@ -111,13 +111,20 @@ jobs:
 
       # Deliberately not `-r requirements.txt`: running tests/ does not need
       # tensorflow, feast or kfp, and pulling them turns a 1-minute job into a
-      # 10-minute one. This is the transitive set the tests actually import.
+      # 10-minute one.
+      #
+      # The list was derived by walking the import graph from tests/ rather than
+      # guessed. httpx is kept even though nothing imports it: starlette's
+      # TestClient needs it at runtime, which is exactly the kind of gap a
+      # static reading misses. requests and pydantic are cheap insurance for
+      # the same reason. prometheus_fastapi_instrumentator and uvicorn are
+      # genuinely optional (guarded / under __main__), so they are left out.
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
             pytest httpx numpy pandas scikit-learn lightgbm mlflow skops \
-            pyyaml pydriller fastapi shap sqlalchemy
+            pyyaml pydriller fastapi shap sqlalchemy requests pydantic
 
       - name: Run the test suite
         run: python -m pytest tests/ -q
