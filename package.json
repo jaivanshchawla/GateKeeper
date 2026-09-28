@@ -1,0 +1,23 @@
+{
+  "name": "gatekeeper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Husky-managed git hooks for the Gatekeeper MLOps quality gate",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "hooks:install": "husky",
+    "hooks:status": "node scripts/hooks/status.mjs",
+    "lint:python": "python -m ruff check .",
+    "format:python": "python -m ruff format .",
+    "test:python": "python -m pytest tests/ -q",
+    "gate1": "python scripts/pre_push_score.py"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
