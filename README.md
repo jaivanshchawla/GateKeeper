@@ -103,11 +103,24 @@ Open http://localhost:3000 to view the Gatekeeper Dashboard.
 - `scripts/check_data_leakage.py` — Validates train/test split integrity
 - `.pre-commit-config.yaml` — Pre-push hooks (detect-secrets, ruff, leakage, pytest)
 
-### Install pre-push hook
+### Install the hooks
+
+Hooks are managed by [husky](https://github.com/typicode/husky) and installed by
+`npm install` (which runs the `prepare` script).
 
 ```bash
-pre-commit install --hook-type pre-push
+npm install            # installs husky and activates the hooks
+npm run hooks:verify   # confirm the wiring
+npm run hooks:list     # show which hooks run at which stage
 ```
+
+See [docs/HUSKY.md](docs/HUSKY.md) for the hook architecture and
+[docs/HUSKY-UPSTREAM.md](docs/HUSKY-UPSTREAM.md) for how husky itself is used.
+
+`.pre-commit-config.yaml` is kept as the declarative record of the hook policy
+and for environments where the Python `pre-commit` tool is the installer. Do not
+run `pre-commit install` in a clone where husky is installed — both write to
+`.git/hooks/pre-push` and git only runs one.
 
 ## Phase 4: Gate 2 (GitHub Action)
 
