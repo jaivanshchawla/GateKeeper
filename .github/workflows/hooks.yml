@@ -1,0 +1,123 @@
+# Validates the husky-managed git hooks.
+#
+# Two jobs, because they fail for different reasons and one is fast:
+#
+#   hooks  -- installs husky for real on three operating systems, checks the
+#             wiring, and runs the hook suite. No ML dependencies.
+#   suite  -- runs the project's own test suite, so a hook change cannot break
+#             the thing it is gating.
+#
+# The `hooks` matrix mirrors husky's own CI (ubuntu/macOS/Windows), because the
+# bootstrap in .husky/lib/bootstrap.sh exists specifically to survive the
+# differences between them.
+
+name: Hooks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hooks:
+    name: hooks (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # --ignore-scripts keeps `prepare` from running before Node is ready;
+      # the install is then done explicitly so a failure is attributable.
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install hooks
+        # CI=true makes install.mjs skip by default, so force it here: this
+        # job's whole purpose is to exercise the real setup path.
+        env:
+          HUSKY: "1"
+        run: node .husky/install.mjs
+
+      - name: Verify the hook wiring
+        run: python -m scripts.hooks.verify
+
+      - name: List the hook inventory
+        run: python -m scripts.hooks.verify --list
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run the hook tests
+        run: python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q
+
+      # Exercises the real .husky/_ -> .husky/<hook> -> module chain rather
+      # than calling the modules directly, on the shell git actually uses.
+      - name: Run the real pre-commit shim
+        if: runner.os != 'Windows'
+        run: sh .husky/_/pre-commit
+
+      - name: Reject a bad commit subject through the real commit-msg shim
+        if: runner.os != 'Windows'
+        run: |
+          printf 'this is not conventional\n' > "$RUNNER_TEMP/msg"
+          if sh .husky/_/commit-msg "$RUNNER_TEMP/msg"; then
+            echo "::error::commit-msg accepted an invalid subject"
+            exit 1
+          fi
+
+      # The bootstrap exists to survive Windows specifically (the Microsoft
+      # Store python3 alias, dash/underscore module names), so it is exercised
+      # there too, via the same shell Git would use.
+      - name: Resolve the interpreter through the real bootstrap
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          . .husky/lib/bootstrap.sh
+          gatekeeper_run_hook post-checkout 0 0 0
+
+      # Errors only. Style findings on a 37-line bootstrap are noise, but a
+      # genuine syntax error in the sh layer would take every hook down with
+      # no error from git at all, which is exactly what this catches.
+      - name: Shellcheck the hook shell scripts
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck --shell=sh --severity=error \
+            .husky/pre-commit .husky/commit-msg .husky/pre-push \
+            .husky/lib/bootstrap.sh .husky/lib/common.sh
+
+  suite:
+    name: project test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Deliberately not `-r requirements.txt`: running tests/ does not need
+      # tensorflow, feast or kfp, and pulling them turns a 1-minute job into a
+      # 10-minute one. This is the transitive set the tests actually import.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            pytest httpx numpy pandas scikit-learn lightgbm mlflow skops \
+            pyyaml pydriller fastapi shap sqlalchemy
+
+      - name: Run the test suite
+        run: python -m pytest tests/ -q

@@ -1,0 +1,7 @@
+# Shellcheck configuration for the husky hook scripts.
+#
+# The hook shims source their helpers through a path computed at runtime
+# (`. "$(dirname "$0")/lib/bootstrap.sh"`). shellcheck cannot follow that, and
+# it must stay dynamic: git may invoke a hook by an absolute path, from any
+# working directory. SC1090/SC1091 are therefore expected, not defects.
+disable=SC1090,SC1091
