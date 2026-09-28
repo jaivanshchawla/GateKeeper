@@ -20,6 +20,13 @@ import numpy as np
 import skops.io as sio
 import yaml
 
+# Make the project root importable when this file is executed as a script
+# (`python scripts/pre_push_score.py`), which is how the git hooks and
+# .pre-commit-config.yaml invoke it. Without this, `from ml...` raises,
+# score_commit() swallows it, and Gate 1 prints nothing while still
+# exiting 0 — a hook that looks installed and scores nothing.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 # Trusted types for skops deserialization
 TRUSTED_TYPES = [
     "collections.OrderedDict",
@@ -83,7 +90,11 @@ def score_commit(model, feature_columns, thresholds, repo_path, commit_hash):
         from ml.extract_features import CommitFeatureExtractor
         extractor = CommitFeatureExtractor(repo_path=repo_path, since="2020-01-01")
         features = extractor.extract_single_commit(repo_path, commit_hash)
-    except Exception:
+    except Exception as e:
+        # Report instead of returning None in silence: an unscored commit is
+        # indistinguishable from a safe one in the output, which is how this
+        # bug hid (Gate 1 printed nothing at all and exited 0).
+        print(f"[Gate 1] could not score {commit_hash[:8]}: {type(e).__name__}: {e}", file=sys.stderr)
         return None
 
     # Prepare feature array
@@ -174,6 +185,10 @@ def main():
             high_count += 1
 
     elapsed_ms = (time.perf_counter() - start) * 1000
+
+    if scored == 0:
+        print("[Gate 1] No commits could be scored — see the warnings above", file=sys.stderr)
+        return 0
 
     if scored > 0:
         print(f"\n[Gate 1] Scored {scored} commit(s) in {elapsed_ms:.0f}ms")
