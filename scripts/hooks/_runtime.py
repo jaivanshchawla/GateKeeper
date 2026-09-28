@@ -85,6 +85,7 @@ def git(*args: str, check: bool = False) -> tuple[int, str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
     if check and result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
@@ -105,7 +106,7 @@ def run(command: list[str], *, label: str, timeout: int = 900) -> int:
     """Run a subprocess in the repo root, streaming output. Returns its exit code."""
     log(f"{BANNER} {label}")
     try:
-        completed = subprocess.run(command, cwd=REPO_ROOT, timeout=timeout)
+        completed = subprocess.run(command, cwd=REPO_ROOT, timeout=timeout, check=False)
     except FileNotFoundError:
         log(f"{BANNER} skip: {command[0]} not found on PATH")
         return 0
@@ -118,3 +119,59 @@ def run(command: list[str], *, label: str, timeout: int = 900) -> int:
 def python_module(module: str, *args: str) -> list[str]:
     """Command that runs a module with the resolved project interpreter."""
     return [project_python(), "-m", module, *args]
+
+
+# ── pre-push ref parsing ─────────────────────────────────────────────
+
+ZERO_SHA = "0" * 40
+
+
+def parse_push_refs(stdin_data: str) -> list[tuple[str, str]]:
+    """Parse git's pre-push stdin into (remote_sha, local_sha) pairs.
+
+    Each stdin line is: <local ref> <local sha> <remote ref> <remote sha>
+    A local sha of all zeros means a delete, which has nothing to lint.
+    """
+    refs: list[tuple[str, str]] = []
+    for line in stdin_data.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        local_sha, remote_sha = parts[1], parts[3]
+        if local_sha == ZERO_SHA:
+            continue
+        refs.append((remote_sha, local_sha))
+    return refs
+
+
+def _fallback_base() -> str | None:
+    """Best guess at the branch a new local branch forked from."""
+    for candidate in ("origin/main", "origin/master", "main", "master"):
+        code, _ = git("rev-parse", "--verify", "--quiet", candidate)
+        if code == 0:
+            return candidate
+    return None
+
+
+def changed_files(stdin_data: str, *globs: str) -> list[str]:
+    """Files changed by the refs being pushed, limited to ``globs``.
+
+    Mirrors pre-commit's behaviour of linting only what changed. This repo
+    has pre-existing lint debt, so a whole-tree lint here would block every
+    push; scoping to the outgoing diff keeps the gate meaningful.
+    """
+    patterns = list(globs) or ["."]
+    seen: list[str] = []
+    for remote_sha, local_sha in parse_push_refs(stdin_data):
+        if remote_sha == ZERO_SHA:
+            base = _fallback_base()
+            spec = f"{base}...{local_sha}" if base else f"{local_sha}~1..{local_sha}"
+        else:
+            spec = f"{remote_sha}..{local_sha}"
+        code, out = git("diff", "--name-only", spec, "--", *patterns)
+        if code != 0:
+            continue
+        for path in out.splitlines():
+            if path and path not in seen:
+                seen.append(path)
+    return seen
