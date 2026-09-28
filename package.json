@@ -9,9 +9,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "prepare": "husky",
-    "hooks:install": "husky",
-    "hooks:verify": "python scripts/hooks/verify.py",
+    "prepare": "node .husky/install.mjs",
+    "hooks:init": "node .husky/install.mjs && python -m scripts.hooks.verify",
+    "hooks:install": "node .husky/install.mjs",
+    "hooks:uninstall": "node .husky/uninstall.mjs",
+    "hooks:verify": "python -m scripts.hooks.verify",
+    "hooks:list": "python -m scripts.hooks.verify --list",
     "lint:python": "python -m ruff check .",
     "format:python": "python -m ruff format .",
     "test:python": "python -m pytest tests/ -q",
