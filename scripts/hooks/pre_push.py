@@ -3,15 +3,15 @@
 
 Stages, in order:
 
-1. **Gate 1** — ``scripts/pre_push_score.py`` scores the outgoing commits
+1. **Gate 1** - ``scripts/pre_push_score.py`` scores the outgoing commits
    and prints the band plus the top risk reasons. It warns by default;
    set ``GATE1_BLOCK=1`` to make it blocking. This is Gatekeeper's own
    product surface, so the hook runs it rather than duplicating it.
-2. **ruff** — linted over the *outgoing diff only*, matching pre-commit's
+2. **ruff** - linted over the *outgoing diff only*, matching pre-commit's
    changed-files semantics. This repo carries pre-existing lint debt, so
    a whole-tree lint at pre-push would block every push and teach people
    to bypass the gate.
-3. **pytest** — the test suite. Disable with ``GATEKEEPER_HOOK_TESTS=0``
+3. **pytest** - the test suite. Disable with ``GATEKEEPER_HOOK_TESTS=0``
    (useful for WIP branches); enable in CI by leaving it unset.
 
 The pushed refs arrive on stdin in git's pre-push format; they are read
@@ -44,7 +44,7 @@ def _gate1(stdin_data: str) -> int:
         rt.log(f"{rt.BANNER} skip: {script.name} not found")
         return 0
 
-    rt.log(f"{rt.BANNER} Gate 1 — scoring outgoing commits")
+    rt.log(f"{rt.BANNER} Gate 1 - scoring outgoing commits")
     try:
         completed = subprocess.run(
             [rt.project_python(), str(script)],

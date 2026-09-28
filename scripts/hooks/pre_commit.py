@@ -3,7 +3,7 @@
 
 Two checks, both deliberately cheap (this runs on every commit):
 
-1. ruff on the staged Python files only — not the whole tree, so the hook
+1. ruff on the staged Python files only - not the whole tree, so the hook
    scales with the size of the change rather than the size of the repo.
 2. leftover conflict markers in the staged content, using git's own
    ``diff --check`` instead of re-implementing a scanner.

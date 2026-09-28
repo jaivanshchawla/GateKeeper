@@ -73,7 +73,7 @@ def lint_subject(subject: str) -> list[str]:
     commit_type = match.group("type")
     if commit_type not in ALLOWED_TYPES:
         problems.append(
-            f"unknown type '{commit_type}' — use one of: {', '.join(ALLOWED_TYPES)}"
+            f"unknown type '{commit_type}' - use one of: {', '.join(ALLOWED_TYPES)}"
         )
 
     body = match.group("subject")

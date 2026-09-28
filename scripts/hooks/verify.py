@@ -34,14 +34,14 @@ def _check_hooks_path() -> list[str]:
     code, value = rt.git("config", "--get", "core.hooksPath")
     if code != 0 or not value:
         return [
-            "core.hooksPath is not set — run `npm install` (which runs `husky`)",
+            "core.hooksPath is not set - run `npm install` (which runs `husky`)",
             "husky is not managing this repo's hooks",
         ]
     if value != EXPECTED_HOOKS_PATH:
         return [
             f"core.hooksPath is '{value}', expected '{EXPECTED_HOOKS_PATH}'",
             "fix with: git config core.hooksPath .husky/_",
-            "cause is usually `npx husky <arg>` — husky treats any argument as a directory",
+            "cause is usually `npx husky <arg>` - husky treats any argument as a directory",
         ]
     return []
 
@@ -59,7 +59,7 @@ def _check_hooks_present() -> list[str]:
 
 
 def _check_git_dir_shadowing() -> list[str]:
-    """A leftover .git/hooks/pre-push is ignored under husky — say so."""
+    """A leftover .git/hooks/pre-push is ignored under husky - say so."""
     stale = rt.REPO_ROOT / ".git" / "hooks" / "pre-push"
     if stale.exists():
         return [

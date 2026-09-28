@@ -25,6 +25,23 @@ SKIP_ENV = "GATEKEEPER_SKIP_HOOKS"
 BANNER = "\033[36m[gatekeeper-hooks]\033[0m"
 
 
+def _harden_console() -> None:
+    """Never let non-ASCII output crash a hook.
+
+    Windows terminals default to a legacy code page, where printing a
+    character outside it raises UnicodeEncodeError. A hook that dies for a
+    cosmetic reason blocks a commit, so degrade to escapes instead.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+_harden_console()
+
+
 def _colour_supported() -> bool:
     if os.environ.get("NO_COLOR"):
         return False
@@ -121,7 +138,7 @@ def python_module(module: str, *args: str) -> list[str]:
     return [project_python(), "-m", module, *args]
 
 
-# ── pre-push ref parsing ─────────────────────────────────────────────
+# -- pre-push ref parsing ---------------------------------------------
 
 ZERO_SHA = "0" * 40
 
