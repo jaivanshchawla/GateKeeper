@@ -250,16 +250,40 @@ class TestHookInventory:
     def test_module_for_translates_dashes(self):
         assert rt.module_for("pre-merge-commit") == "scripts.hooks.pre_merge_commit"
 
-    def test_verify_rejects_non_hook_files(self, tmp_path, monkeypatch):
+    def _doctor_on(self, monkeypatch, tmp_path, *names: str) -> list[str]:
         husky_dir = tmp_path / ".husky"
-        husky_dir.mkdir()
-        (husky_dir / "precommit").write_text("echo\n", encoding="utf-8")
-        (husky_dir / "pre-commit").write_text("echo\n", encoding="utf-8")
+        husky_dir.mkdir(exist_ok=True)
+        for name in names:
+            (husky_dir / name).write_text("echo\n", encoding="utf-8")
         monkeypatch.setattr(rt, "REPO_ROOT", tmp_path)
-        problems = verify._check_unknown_hooks()
+        return verify._check_unknown_hooks()
+
+    def test_flags_misspelled_hook_name(self, tmp_path, monkeypatch):
+        problems = self._doctor_on(monkeypatch, tmp_path, "precommit")
         assert len(problems) == 1
-        assert "precommit" in problems[0]
-        assert any("never run" in problem for problem in problems)
+        assert "rename it to 'pre-commit'" in problems[0]
+
+    def test_flags_underscored_hook_name(self, tmp_path, monkeypatch):
+        problems = self._doctor_on(monkeypatch, tmp_path, "pre_commit")
+        assert len(problems) == 1
+        assert "pre-commit" in problems[0]
+
+    def test_flags_extensioned_hook_without_the_real_one(self, tmp_path, monkeypatch):
+        problems = self._doctor_on(monkeypatch, tmp_path, "pre-commit.sh")
+        assert len(problems) == 1
+        assert "git looks for 'pre-commit'" in problems[0]
+
+    def test_allows_helper_beside_the_real_hook(self, tmp_path, monkeypatch):
+        problems = self._doctor_on(monkeypatch, tmp_path, "pre-commit", "pre-commit.js")
+        assert problems == []
+
+    @pytest.mark.parametrize("name", ["install.mjs", "uninstall.mjs", "common.sh"])
+    def test_allows_husky_support_files(self, monkeypatch, tmp_path, name):
+        assert self._doctor_on(monkeypatch, tmp_path, name) == []
+
+    def test_inventory_lists_every_hook(self, capsys):
+        assert verify.main(["--list"]) == 0
+        assert len(rt.HOOKS) == 10
 
 
 class TestShimChain:
