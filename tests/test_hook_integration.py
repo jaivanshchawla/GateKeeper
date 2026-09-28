@@ -23,6 +23,7 @@ if REPO_ROOT not in sys.path:
 from scripts.hooks import _policy as policy
 from scripts.hooks import _runtime as rt
 from scripts.hooks import (
+    applypatch_msg,
     post_checkout,
     post_commit,
     post_merge,
@@ -236,6 +237,31 @@ class TestPostRewrite:
         assert post_rewrite.report("") is None
 
 
+class TestApplyPatchMsg:
+    """`git am` never runs commit-msg, so patches need the same rules."""
+
+    def test_rejects_patch_with_unconventional_subject(self, repo, tmp_path):
+        msg = tmp_path / "PATCH_MSG"
+        msg.write_text("bogus patch subject\n", encoding="utf-8")
+        assert applypatch_msg.main([str(msg)]) == 1
+
+    def test_accepts_patch_with_conventional_subject(self, repo, tmp_path):
+        msg = tmp_path / "PATCH_MSG"
+        msg.write_text("feat(cli): add a flag\n\nbody\n", encoding="utf-8")
+        assert applypatch_msg.main([str(msg)]) == 0
+
+    def test_ignores_the_body_when_checking(self, repo, tmp_path):
+        msg = tmp_path / "PATCH_MSG"
+        msg.write_text("fix: real subject\n\nnot conventional at all\n", encoding="utf-8")
+        assert applypatch_msg.main([str(msg)]) == 0
+
+    def test_tolerates_a_missing_file(self, repo, tmp_path):
+        assert applypatch_msg.main([str(tmp_path / "absent")]) == 0
+
+    def test_tolerates_no_argument(self, repo):
+        assert applypatch_msg.main([]) == 0
+
+
 class TestBootstrapShell:
     """The sh layer git actually runs, exercised through a real shell.
 
@@ -335,9 +361,15 @@ class TestHookInventory:
     def test_allows_husky_support_files(self, monkeypatch, tmp_path, name):
         assert self._doctor_on(monkeypatch, tmp_path, name) == []
 
-    def test_inventory_lists_every_hook(self, capsys):
+    def test_inventory_lists_every_hook(self):
         assert verify.main(["--list"]) == 0
-        assert len(rt.HOOKS) == 10
+        assert len(rt.HOOKS) == 11
+
+    def test_every_shipped_hook_is_one_husky_dispatches(self):
+        # husky only creates _/ shims for the hooks it knows; a hook outside
+        # that set would be a file that never runs.
+        husky_hooks = set(rt.HOOKS)
+        assert husky_hooks.issubset(set(rt.KNOWN_GIT_HOOKS))
 
 
 class TestShimChain:

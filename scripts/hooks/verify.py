@@ -109,6 +109,7 @@ def _check_git_dir_shadowing() -> list[str]:
 def _print_inventory() -> None:
     """List the shipped hooks, the stage they run at and whether they block."""
     blocking = {
+        "applypatch-msg",
         "pre-commit",
         "commit-msg",
         "pre-merge-commit",

@@ -82,7 +82,7 @@ def lint_subject(subject: str) -> list[str]:
     return problems
 
 
-def _first_meaningful_line(message: str) -> str:
+def first_meaningful_line(message: str) -> str:
     """First non-empty, non-comment line of a commit message."""
     for line in message.splitlines():
         stripped = line.strip()
@@ -104,7 +104,7 @@ def main(argv: list[str]) -> int:
         if not message_path.exists():
             rt.log(f"{rt.BANNER} commit-msg: no message at {message_path}, skipping")
             return 0
-        problems = lint_subject(_first_meaningful_line(message_path.read_text(encoding="utf-8")))
+        problems = lint_subject(first_meaningful_line(message_path.read_text(encoding="utf-8")))
 
     if not problems:
         return 0

@@ -26,6 +26,7 @@ SKIP_ENV = "GATEKEEPER_SKIP_HOOKS"
 # owner of the list: the doctor, the tests and the docs all read it rather
 # than each repeating the hook names.
 HOOKS = (
+    "applypatch-msg",
     "pre-commit",
     "prepare-commit-msg",
     "commit-msg",
