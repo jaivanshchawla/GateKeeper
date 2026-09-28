@@ -1,0 +1,2 @@
+. "$(dirname "$0")/lib/bootstrap.sh"
+gatekeeper_run_hook pre-merge-commit
