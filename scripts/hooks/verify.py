@@ -53,22 +53,45 @@ def _check_hooks_present() -> list[str]:
 
 
 def _check_unknown_hooks() -> list[str]:
-    """Files in .husky/ that are not valid git hook names never run.
+    """Catch files in .husky/ that look like hooks but will never run.
 
-    `precommit` or `pre-commit.sh` are the classic mistakes this catches.
+    Marks that look right and are inert are the first thing husky's own
+    troubleshooting guide lists, so three shapes are flagged:
+
+    * `precommit` / `pre_commit` -- a hook name without its dashes.
+    * `pre-commit.sh` -- a hook name with an extension, when the real
+      extensionless hook is not there to run.
+
+    `.husky/install.mjs`, `.husky/common.sh` and helpers such as
+    `.husky/pre-commit.js` next to a real `.husky/pre-commit` are legitimate
+    -- husky documents exactly those -- so anything else is left alone
+    rather than guessed at.
     """
     husky_dir = rt.REPO_ROOT / ".husky"
     if not husky_dir.is_dir():
         return []
+
+    present = {entry.name for entry in husky_dir.iterdir() if entry.is_file()}
+    squashed = {hook.replace("-", ""): hook for hook in rt.KNOWN_GIT_HOOKS}
     problems: list[str] = []
-    for entry in sorted(husky_dir.iterdir()):
-        if not entry.is_file():
+
+    for name in sorted(present):
+        if name in rt.KNOWN_GIT_HOOKS:
             continue
-        if entry.name in rt.KNOWN_GIT_HOOKS or entry.name in rt.HOOKS:
+
+        # precommit / pre_commit instead of pre-commit
+        if "-" not in name and name.replace("_", "").lower() in squashed:
+            correct = squashed[name.replace("_", "").lower()]
+            problems.append(f".husky/{name} will never run -- rename it to '{correct}'")
             continue
-        problems.append(
-            f".husky/{entry.name} is not a git hook name and will never run"
-        )
+
+        # pre-commit.sh / pre-commit.txt when there is no real pre-commit
+        stem = name.rsplit(".", 1)[0]
+        if stem != name and stem in rt.KNOWN_GIT_HOOKS and stem not in present:
+            problems.append(
+                f".husky/{name} will never run -- git looks for '{stem}'"
+            )
+
     return problems
 
 
@@ -83,7 +106,30 @@ def _check_git_dir_shadowing() -> list[str]:
     return []
 
 
-def main() -> int:
+def _print_inventory() -> None:
+    """List the shipped hooks, the stage they run at and whether they block."""
+    blocking = {
+        "pre-commit",
+        "commit-msg",
+        "pre-merge-commit",
+        "pre-rebase",
+        "pre-push",
+    }
+    rt.log("")
+    rt.log(f"{rt.BANNER} shipped hooks")
+    rt.log("  blocks: can abort the git command. reports: advisory only.")
+    rt.log("  (within pre-push, Gate 1 is advisory and ruff/pytest block)")
+    for hook in rt.HOOKS:
+        marker = "blocks" if hook in blocking else "reports"
+        rt.log(f"  {hook:<20} {marker:<8} {rt.module_for(hook)}")
+    rt.log("")
+
+
+def main(argv: list[str]) -> int:
+    if "--list" in argv:
+        _print_inventory()
+        return 0
+
     checks = (
         ("core.hooksPath", _check_hooks_path()),
         (f"hook shims and modules ({len(rt.HOOKS)} hooks)", _check_hooks_present()),
@@ -114,4 +160,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
