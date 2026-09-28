@@ -22,6 +22,60 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # already used by .pre-commit-config.yaml (SKIP=gatekeeper-score).
 SKIP_ENV = "GATEKEEPER_SKIP_HOOKS"
 
+# Hooks this project ships, in git's execution order. This is the single
+# owner of the list: the doctor, the tests and the docs all read it rather
+# than each repeating the hook names.
+HOOKS = (
+    "pre-commit",
+    "prepare-commit-msg",
+    "commit-msg",
+    "pre-merge-commit",
+    "pre-rebase",
+    "pre-push",
+    "post-commit",
+    "post-merge",
+    "post-checkout",
+    "post-rewrite",
+)
+
+# Every hook name git knows about. Anything else in .husky/ is not a hook
+# and will never run -- the single most common "hooks not running" cause.
+KNOWN_GIT_HOOKS = (
+    "applypatch-msg",
+    "pre-applypatch",
+    "post-applypatch",
+    "pre-commit",
+    "pre-merge-commit",
+    "prepare-commit-msg",
+    "commit-msg",
+    "post-commit",
+    "pre-rebase",
+    "post-checkout",
+    "post-merge",
+    "pre-push",
+    "pre-receive",
+    "update",
+    "proc-receive",
+    "post-receive",
+    "post-update",
+    "reference-transaction",
+    "push-to-checkout",
+    "pre-auto-gc",
+    "post-rewrite",
+    "sendemail-validate",
+    "fsmonitor-watchman",
+    "p4-changelist",
+    "p4-prepare-changelist",
+    "p4-post-changelist",
+    "p4-pre-submit",
+    "post-index-change",
+)
+
+
+def module_for(hook: str) -> str:
+    """Module name for a hook, e.g. pre-commit -> scripts.hooks.pre_commit."""
+    return "scripts.hooks." + hook.replace("-", "_")
+
 BANNER = "\033[36m[gatekeeper-hooks]\033[0m"
 
 

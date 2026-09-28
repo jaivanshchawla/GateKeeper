@@ -21,7 +21,6 @@ import sys
 
 from scripts.hooks import _runtime as rt
 
-EXPECTED_HOOKS = ("pre-commit", "commit-msg", "pre-push")
 EXPECTED_HOOKS_PATH = ".husky/_"
 
 
@@ -43,13 +42,33 @@ def _check_hooks_path() -> list[str]:
 
 def _check_hooks_present() -> list[str]:
     problems: list[str] = []
-    for hook in EXPECTED_HOOKS:
+    for hook in rt.HOOKS:
         shim = rt.REPO_ROOT / ".husky" / hook
-        script = rt.REPO_ROOT / "scripts" / "hooks" / f"{hook.replace('-', '_')}.py"
+        module = rt.REPO_ROOT / (rt.module_for(hook).replace(".", "/") + ".py")
         if not shim.exists():
             problems.append(f"missing hook shim: .husky/{hook}")
-        if not script.exists():
-            problems.append(f"missing hook script: scripts/hooks/{hook.replace('-', '_')}.py")
+        if not module.exists():
+            problems.append(f"missing hook module: {rt.module_for(hook).replace('.', '/')}.py")
+    return problems
+
+
+def _check_unknown_hooks() -> list[str]:
+    """Files in .husky/ that are not valid git hook names never run.
+
+    `precommit` or `pre-commit.sh` are the classic mistakes this catches.
+    """
+    husky_dir = rt.REPO_ROOT / ".husky"
+    if not husky_dir.is_dir():
+        return []
+    problems: list[str] = []
+    for entry in sorted(husky_dir.iterdir()):
+        if not entry.is_file():
+            continue
+        if entry.name in rt.KNOWN_GIT_HOOKS or entry.name in rt.HOOKS:
+            continue
+        problems.append(
+            f".husky/{entry.name} is not a git hook name and will never run"
+        )
     return problems
 
 
@@ -67,7 +86,8 @@ def _check_git_dir_shadowing() -> list[str]:
 def main() -> int:
     checks = (
         ("core.hooksPath", _check_hooks_path()),
-        ("hook shims and scripts", _check_hooks_present()),
+        (f"hook shims and modules ({len(rt.HOOKS)} hooks)", _check_hooks_present()),
+        ("unknown files in .husky/", _check_unknown_hooks()),
         ("shadowed .git/hooks", _check_git_dir_shadowing()),
     )
 
