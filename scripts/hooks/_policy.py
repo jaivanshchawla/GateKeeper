@@ -21,7 +21,7 @@ from scripts.hooks import _runtime as rt
 CONFIG_FILENAME = ".gatekeeper.yml"
 
 # Used when .gatekeeper.yml is missing, unreadable, or PyYAML is unavailable.
-DEFAULT_PROTECTED_BRANCHES = ("main", "master", "release/*")
+DEFAULT_PROTECTED_BRANCHES = ("main", "master", "release/*", "hotfix/*")
 
 # Branches that are not really branches (detached HEAD, fresh repo).
 _NON_BRANCHES = ("HEAD", "")
