@@ -67,6 +67,23 @@ def skipped(hook_name: str) -> bool:
     return "all" in requested or hook_name in requested
 
 
+def advisory(hook: str, action) -> int:
+    """Run a non-blocking hook, never failing the git command it hangs off.
+
+    `post-*`, `prepare-commit-msg` and reporting hooks exist to inform, not
+    to gate. They must not be able to break a commit, merge or checkout, so
+    any failure is reported and swallowed.
+    """
+    if skipped(hook):
+        log(f"{BANNER} {hook} skipped via {SKIP_ENV}")
+        return 0
+    try:
+        action()
+    except Exception as exc:
+        log(f"{BANNER} {hook}: {type(exc).__name__}: {exc} (continuing)")
+    return 0
+
+
 def project_python() -> str:
     """Return the interpreter best suited to run project tooling.
 
