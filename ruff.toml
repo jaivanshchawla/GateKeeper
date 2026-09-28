@@ -14,6 +14,9 @@
 "tests/*" = ["DTZ001", "DTZ005", "RUF013", "BLE001"]
 "api/main.py" = ["BLE001", "SIM115", "S110"]
 "scripts/score_pr.py" = ["BLE001", "S110", "PLR1722", "SIM115", "RUF013"]
+# Same shape of code as score_pr.py above (best-effort subprocess + model
+# loading); it was simply missing from this list.
+"scripts/pre_push_score.py" = ["BLE001", "PLW1510", "SIM115", "RUF059"]
 "scripts/check_data_leakage.py" = ["RUF059"]
 "webhook/*.py" = ["BLE001", "DTZ003", "DTZ005", "PLW1508"]
 "webhook/**/*.py" = ["BLE001", "DTZ003", "DTZ005", "PLW1508"]
