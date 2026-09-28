@@ -13,6 +13,11 @@
 # interpreter runs the project's own tooling (venv-aware) is decided in one
 # place: scripts/hooks/_runtime.py.
 
+# Optional shell helpers. Sourced once, here, so the two-line hook shims do
+# not each have to remember to do it. `$0` is the hook file that sourced
+# this script, so its directory is the .husky/ directory.
+. "$(dirname "$0")/lib/common.sh" 2>/dev/null || true
+
 gatekeeper_run_hook() {
 	name=$1
 	shift
