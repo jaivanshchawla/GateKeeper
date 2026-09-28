@@ -236,6 +236,60 @@ class TestPostRewrite:
         assert post_rewrite.report("") is None
 
 
+class TestBootstrapShell:
+    """The sh layer git actually runs, exercised through a real shell.
+
+    These caught a defect reading the file could not: a failed `.` aborts a
+    non-interactive shell, so the defensively-written `source ... || true`
+    never ran and a wrong $0 silently killed every hook.
+    """
+
+    @staticmethod
+    def _sh(script: str, env: dict | None = None) -> subprocess.CompletedProcess:
+        merged = {**os.environ, **(env or {})}
+        return subprocess.run(
+            ["sh", "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=merged,
+            check=False,
+        )
+
+    def test_sourcing_without_a_hook_path_does_not_abort(self):
+        result = self._sh('. .husky/lib/bootstrap.sh; echo survived')
+        assert result.returncode == 0
+        assert "survived" in result.stdout
+
+    def test_sourcing_from_another_directory_does_not_abort(self, tmp_path):
+        bootstrap = (rt.REPO_ROOT / ".husky" / "lib" / "bootstrap.sh").as_posix()
+        result = self._sh(f'cd "{tmp_path.as_posix()}" && . "{bootstrap}"; echo survived')
+        assert result.returncode == 0
+        assert "survived" in result.stdout
+
+    def test_run_hook_resolves_and_executes_a_module(self):
+        # post-checkout with a file-checkout flag exits 0 and prints nothing.
+        result = self._sh('. .husky/lib/bootstrap.sh; gatekeeper_run_hook post-checkout 0 0 0')
+        assert result.returncode == 0, result.stderr
+
+    def test_bad_gatekeeper_python_falls_through(self):
+        result = self._sh(
+            '. .husky/lib/bootstrap.sh; gatekeeper_run_hook post-checkout 0 0 0',
+            env={"GATEKEEPER_PYTHON": "/nonexistent/python"},
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_reports_clearly_when_no_interpreter_works(self):
+        # An empty PATH with no override: the hook must fail loudly, not
+        # silently succeed and let a bad commit through.
+        result = self._sh(
+            '. .husky/lib/bootstrap.sh; gatekeeper_run_hook post-checkout 0 0 0',
+            env={"PATH": "", "GATEKEEPER_PYTHON": ""},
+        )
+        assert result.returncode != 0
+        assert "no working Python 3" in result.stderr
+
+
 class TestHookInventory:
     def test_every_hook_has_a_shim_and_a_module(self):
         for hook in rt.HOOKS:
