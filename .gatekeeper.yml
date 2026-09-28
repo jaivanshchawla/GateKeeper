@@ -111,6 +111,14 @@ path_rules:
   "**/*.lock":
     dependency_change: block
 
+# Branches the local hooks refuse to commit to, rebase, or merge into
+# directly. Glob patterns are supported.
+protected_branches:
+  - main
+  - master
+  - release/*
+  - hotfix/*
+
 freeze_windows: []  # add windows like: [{name: "code-freeze", start: "2026-12-20T00:00:00Z", end: "2027-01-02T00:00:00Z", branches: ["main"]}]
 
 fail_on:
