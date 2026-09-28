@@ -71,17 +71,19 @@ class TestCommitMessageRules:
         assert commit_msg.lint_subject(subject) == []
 
     def test_lint_cli_exit_codes(self):
-        script = os.path.join(REPO_ROOT, "scripts", "hooks", "commit_msg.py")
+        base = [sys.executable, "-m", "scripts.hooks.commit_msg"]
         good = subprocess.run(
-            [sys.executable, script, "--lint", "feat: fine"],
+            [*base, "--lint", "feat: fine"],
             capture_output=True,
             text=True,
+            cwd=REPO_ROOT,
             check=False,
         )
         bad = subprocess.run(
-            [sys.executable, script, "--lint", "nope"],
+            [*base, "--lint", "nope"],
             capture_output=True,
             text=True,
+            cwd=REPO_ROOT,
             check=False,
         )
         assert good.returncode == 0
@@ -170,10 +172,22 @@ class TestWiring:
 
     def test_doctor_passes(self):
         result = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "scripts", "hooks", "verify.py")],
+            [sys.executable, "-m", "scripts.hooks.verify"],
             capture_output=True,
             text=True,
             cwd=REPO_ROOT,
             check=False,
         )
         assert result.returncode == 0, result.stderr
+
+    def test_bootstrap_uses_module_invocation(self):
+        """Hooks must be run as modules, not file paths.
+
+        Running `python scripts/hooks/x.py` sets sys.path[0] to scripts/,
+        which is what made the hook scripts need a sys.path shim each.
+        `python -m scripts.hooks.x` removes that entirely.
+        """
+        bootstrap = os.path.join(REPO_ROOT, ".husky", "lib", "bootstrap.sh")
+        with open(bootstrap, encoding="utf-8") as handle:
+            text = handle.read()
+        assert 'exec "$candidate" -m "scripts.hooks.$module"' in text

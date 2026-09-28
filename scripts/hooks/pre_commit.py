@@ -17,13 +17,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
-if __package__ in (None, ""):  # executed as a file by husky
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.hooks import _runtime as rt
-else:
-    from scripts.hooks import _runtime as rt
+from scripts.hooks import _runtime as rt
 
 RUFF_TIMEOUT = 120
 

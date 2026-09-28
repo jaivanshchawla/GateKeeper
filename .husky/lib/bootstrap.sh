@@ -20,14 +20,19 @@ gatekeeper_run_hook() {
 	root=$(git rev-parse --show-toplevel 2>/dev/null) || root=.
 	cd "$root" || exit 1
 
-	# Hook names use dashes (pre-commit); the scripts use underscores
-	# (scripts/hooks/pre_commit.py).
-	script=$(printf '%s' "$name" | tr '-' '_')
+	# Hook names use dashes (pre-commit); the modules use underscores
+	# (scripts.hooks.pre_commit).
+	module=$(printf '%s' "$name" | tr '-' '_')
+
+	[ "${HUSKY-}" = "2" ] && set -x
 
 	for candidate in python python3 py; do
 		if command -v "$candidate" >/dev/null 2>&1 &&
 			"$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
-			exec "$candidate" "scripts/hooks/$script.py" "$@"
+			# -m (not a file path) so the hook modules are imported as part
+			# of the scripts.hooks package and need no sys.path bootstrapping
+			# of their own.
+			exec "$candidate" -m "scripts.hooks.$module" "$@"
 		fi
 	done
 
