@@ -74,15 +74,21 @@ jobs:
 
       # The pre-push hook writes the gate-run marker and then runs this very
       # suite, so `pre-auto-gc` declines for the duration. A test that reads
-      # that marker is therefore green only when nothing is pushing -- which is
-      # how a pair of shell tests passed locally and failed on first push.
-      # Planting the marker reproduces the real context instead of the tidy one.
-      - name: Re-run the hook tests under a live gate marker
+      # that marker is green only when nothing is pushing -- which is how a
+      # pair of shell tests passed locally and failed on the first push.
+      #
+      # The exported switches cover the same class of mistake: a test reporting
+      # on the ambient environment rather than on its own. Every one of these is
+      # cleared for the session by tests/conftest.py, so a failure here means a
+      # test has started reading the machine again.
+      - name: Re-run the hook tests against a hostile environment
         if: runner.os == 'Linux'
         run: |
           mkdir -p .git/gatekeeper
           printf '{"label":"pre-push","pid":1,"started_at":%s}\n' "$(date +%s)" > .git/gatekeeper/gate_run.json
-          python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q
+          env GATEKEEPER_TRACE=1 HUSKY=2 GATEKEEPER_SKIP_HOOKS=all \
+            GATEKEEPER_HOOK_TESTS=0 GATE1_BLOCK=1 GATEKEEPER_ALLOW_PROTECTED=1 \
+            python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q
           rm -f .git/gatekeeper/gate_run.json
 
       # Exercises the real .husky/_ -> .husky/<hook> -> module chain rather

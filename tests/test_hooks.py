@@ -206,7 +206,14 @@ class TestTracing:
 
     def test_husky_zero_does_not_trace(self, monkeypatch):
         # 0 means "disabled", not "as loud as possible".
+        #
+        # GATEKEEPER_TRACE has to be cleared too: this asserts something about
+        # one switch, so leaving the other switch to the ambient environment
+        # makes it fail for whoever has `export GATEKEEPER_TRACE=1` in their
+        # shell -- and pre-push runs this suite, so a debugging habit would
+        # have blocked their own push.
         monkeypatch.setenv("HUSKY", "0")
+        monkeypatch.delenv(rt.TRACE_ENV, raising=False)
         assert rt.tracing_enabled() is False
 
     def test_enter_reports_the_interpreter_and_arguments(self, monkeypatch, capsys):
