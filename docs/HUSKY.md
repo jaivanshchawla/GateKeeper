@@ -52,11 +52,12 @@ scripts/hooks/
   pre_merge_commit.py  pre_rebase.py
   post_commit.py  post_applypatch.py  post_merge.py
   post_checkout.py  post_rewrite.py  pre_auto_gc.py
+tests/conftest.py               clears the hook layer's own env vars for the suite
 tests/test_hooks.py             unit tests
 tests/test_hook_integration.py  every hook against a real temporary git repo
 ```
 
-Three rules keep this readable:
+Four rules keep this readable:
 
 1. **`.husky/<hook>` files contain no logic.** Two lines — source the
    bootstrap, delegate to a module. Anything longer belongs in `scripts/hooks/`
@@ -66,6 +67,11 @@ Three rules keep this readable:
    which Python runs the project's tooling.
 3. **The hook list has one owner.** `_runtime.HOOKS` is read by the doctor, the
    tests and these docs, so a rename cannot silently disable a hook.
+4. **The tests do not inherit your environment.** `tests/conftest.py` clears
+   every variable the hook layer reads, so a test can only fail because of the
+   code. This is not theory: pre-push runs this suite while its own gate marker
+   is live, and two tests were caught asserting "no gate is running" from
+   *inside* a gate run.
 
 Hooks are invoked as `python -m scripts.hooks.<hook>`, not by file path. Running
 a file puts `scripts/` on `sys.path[0]`, which is what once forced every hook

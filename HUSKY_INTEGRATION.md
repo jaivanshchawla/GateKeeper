@@ -110,7 +110,7 @@ already failed. We probe every candidate interpreter first and diagnose it at
 
 ## 3. Commit log
 
-Phase 1 (1-19) and Phase 2 (20-51). Each commit is one thing.
+Phase 1 (1-19) and Phase 2 (20-53). Each commit is one thing.
 
 ```
  1 0cbf199 chore(husky): add root package manifest for git-hook tooling
@@ -166,9 +166,12 @@ Phase 1 (1-19) and Phase 2 (20-51). Each commit is one thing.
    -- phase 2, third pass: the push that exposed B17 --
 49 3706beb fix(hooks): make the hook state directory relocatable
 50 3831772 ci(hooks): re-run the hook tests under a live gate marker
-51         docs(husky): record the hermeticity bug the gate caught
-           (the tip of this branch; its own hash is not recorded because it
-           contains this line)
+51 b788992 docs(husky): record the hermeticity bug the gate caught
+   -- phase 2, fourth pass: hardening what the third pass revealed --
+52 a41b4df test(hooks): make the suite independent of the ambient hook environment
+53         docs(husky): record B18, the ambient-environment dependency
+           (53 is the tip of this branch; its own hash is not recorded because
+           it contains this line)
 ```
 
 Nothing is merged into `main`.
@@ -337,6 +340,30 @@ live marker deliberately planted in `.git/gatekeeper/` — the condition that
 failed — which now passes, while the real shim still declines (exit 1) under
 that same marker.
 
+**B18 — the same mistake one layer over: a test reading the ambient
+environment.**
+Re-running the gate by hand turned up a second instance of B17's shape.
+`TestTracing::test_husky_zero_does_not_trace` asserts that `HUSKY=0` does not
+enable tracing — but it set only `HUSKY`, leaving `GATEKEEPER_TRACE` to the
+environment. Anyone with `export GATEKEEPER_TRACE=1` in their profile failed
+that test, and since pre-push runs this suite, **a debugging habit would have
+blocked their own push**. It surfaced only because the gate was run with
+tracing on, to get per-stage timings.
+
+*Fixed* in two layers rather than one:
+
+1. The test now clears both switches, because it asserts something about one.
+2. `tests/conftest.py` clears **every** environment variable the hook layer
+   reads, for the whole session. A test that needs one sets it with
+   `monkeypatch`, which restores it afterwards — so the suite now answers about
+   the code rather than about the machine that started it.
+
+This is the general form of B17, and worth stating plainly: a hook layer
+configured by the environment cannot be tested by a suite that inherits the
+environment. The verification below runs the whole suite with all eight
+switches set to hostile values *and* a live gate marker, which is the check
+that was missing.
+
 ---
 
 ## 5. Verification
@@ -365,6 +392,7 @@ that same marker.
 | Gate-run marker | marker written, then read by `pre-auto-gc` | collection declined while fresh; allowed once stale |
 | Relocatable state | `GATEKEEPER_STATE_DIR=<tmp>` | the marker and the event log both follow it (B17) |
 | Hook suites under a live gate | suites re-run with a marker planted in `.git/gatekeeper/` | **168 passed** — the run that failed before the fix (B17) |
+| Whole suite, hostile environment | all 8 hook switches exported, **and** a live gate marker | **264 passed** — was 1 failed before B18 |
 | Real shim under a live gate | `sh .husky/_/pre-auto-gc` with the marker present | exit 1, "skipping background gc"; exit 0 without it |
 | Tracing | `HUSKY=2 sh .husky/_/pre-auto-gc` | sh `set -x` **and** `pre-auto-gc: interpreter=...` from Python |
 | Install / uninstall round trip | `node .husky/uninstall.mjs` then `install.mjs` | `core.hooksPath` unset and restored; `.husky/_` removed and regenerated |
@@ -414,12 +442,13 @@ the whole chain, including the interpreter each hook resolved to.
 
 CI (`.github/workflows/hooks.yml`) is now three jobs. `hooks` installs husky on
 ubuntu, macOS and Windows across Python 3.11 and 3.12, runs the doctor with
-`--strict`, asserts the `14/14` inventory, runs both hook suites, exercises the
-real `.husky/_` shims through the shell git uses, traces one hook end to end,
-reproduces the flag-shaped `core.hooksPath`, and shellchecks *every* shim — the
-list comes from `rt.HOOKS`, so a new hook cannot skip the check. `installer`
-walks install → uninstall → reinstall on Node 18, 20 and 22, plus a
-`NODE_ENV=production` install. `suite` runs the project's own test suite.
+`--strict`, asserts the `14/14` inventory, runs both hook suites, **re-runs them
+against a live gate marker and every hook switch set to a hostile value (B17,
+B18)**, exercises the real `.husky/_` shims through the shell git uses, traces
+one hook end to end, reproduces the flag-shaped `core.hooksPath`, and shellchecks
+*every* shim — the list comes from `rt.HOOKS`, so a new hook cannot skip the
+check. `installer` walks install → uninstall → reinstall on Node 18, 20 and 22,
+plus a `NODE_ENV=production` install. `suite` runs the project's own test suite.
 
 ---
 
