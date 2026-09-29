@@ -75,6 +75,7 @@ def repo(tmp_path, monkeypatch):
     # Every hook reaches git through rt, so patching the root is enough.
     monkeypatch.setattr(rt, "REPO_ROOT", path)
     monkeypatch.delenv(rt.SKIP_ENV, raising=False)
+    monkeypatch.delenv(rt.STATE_DIR_ENV, raising=False)
     monkeypatch.delenv("HUSKY", raising=False)
     monkeypatch.delenv("GATEKEEPER_ALLOW_PROTECTED", raising=False)
     return path
@@ -284,6 +285,20 @@ class TestBootstrapShell:
     never ran and a wrong $0 silently killed every hook.
     """
 
+    @pytest.fixture(autouse=True)
+    def isolated_state_dir(self, tmp_path, monkeypatch):
+        """Keep hook state out of *this* repository.
+
+        These tests run the real shims against the real checkout, so a hook
+        that answers by reading repository state is reading the state of
+        whatever is happening right now. `pre-auto-gc` declines while a gate
+        is running, and the pre-push hook -- which runs this very suite --
+        holds exactly that marker. Both tests below passed standalone and
+        failed inside the push, reporting the gate's state rather than the
+        hook's.
+        """
+        monkeypatch.setenv(rt.STATE_DIR_ENV, str(tmp_path / "hook-state"))
+
     @staticmethod
     def _sh(script: str, env: dict | None = None) -> subprocess.CompletedProcess:
         merged = {**os.environ, **(env or {})}
@@ -345,6 +360,30 @@ class TestBootstrapShell:
             "set -u; . .husky/lib/bootstrap.sh; gatekeeper_run_hook pre-auto-gc"
         )
         assert result.returncode == 0, result.stderr
+
+    def test_pre_auto_gc_shim_allows_collection_under_isolated_state(self):
+        """The state redirect is what makes this the hook's answer, not the gate's."""
+        result = self._sh(". .husky/lib/bootstrap.sh; gatekeeper_run_hook pre-auto-gc")
+        assert result.returncode == 0, result.stderr
+
+    def test_pre_auto_gc_shim_declines_when_its_state_holds_a_marker(self, tmp_path):
+        """The same hook and the same repository, the opposite answer.
+
+        Proves the redirect above decides the outcome, rather than luck about
+        whether a gate happened to be running when the suite ran.
+        """
+        state = tmp_path / "gate-state"
+        state.mkdir()
+        (state / rt.GATE_RUN_FILE).write_text(
+            json.dumps({"label": "pre-push", "pid": 1, "started_at": time.time()}),
+            encoding="utf-8",
+        )
+        result = self._sh(
+            ". .husky/lib/bootstrap.sh; gatekeeper_run_hook pre-auto-gc",
+            env={rt.STATE_DIR_ENV: state.as_posix()},
+        )
+        assert result.returncode == 1
+        assert "skipping background gc" in result.stderr
 
     @needs_husky
     def test_xdg_startup_file_is_sourced_by_husky(self, tmp_path):
@@ -540,6 +579,37 @@ class TestGateRunMarker:
         assert rt.gate_run_active() is False
         assert rt.end_gate_run() is None
 
+    def test_state_directory_can_be_relocated(self, repo, tmp_path, monkeypatch):
+        """The escape hatch a read-only git directory -- and these tests -- need."""
+        elsewhere = tmp_path / "elsewhere"
+        monkeypatch.setenv(rt.STATE_DIR_ENV, str(elsewhere))
+        assert rt.begin_gate_run("pre-push") is True
+        assert (elsewhere / rt.GATE_RUN_FILE).is_file()
+        assert not (repo / ".git" / rt.STATE_DIR).exists()
+        assert rt.gate_run_active() is True
+
+    def test_relocated_state_ignores_a_marker_in_the_repository(
+        self, repo, tmp_path, monkeypatch
+    ):
+        """A live marker in the repo must be invisible once state is moved."""
+        directory = repo / ".git" / rt.STATE_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / rt.GATE_RUN_FILE).write_text(
+            json.dumps({"label": "pre-push", "pid": 1, "started_at": time.time()}),
+            encoding="utf-8",
+        )
+        assert rt.gate_run_active() is True
+        monkeypatch.setenv(rt.STATE_DIR_ENV, str(tmp_path / "elsewhere"))
+        assert rt.gate_run_active() is False
+
+    def test_resolving_state_does_not_create_it(self, tmp_path, monkeypatch):
+        """A hook that only reads state must not leave a directory behind."""
+        target = tmp_path / "never-made"
+        monkeypatch.setenv(rt.STATE_DIR_ENV, str(target))
+        assert rt.state_dir(create=False) == target
+        assert rt.gate_run_active() is False
+        assert not target.exists()
+
 
 class TestPreAutoGc:
     """A non-zero exit here is not an error: it postpones the collection."""
@@ -630,6 +700,17 @@ class TestEventLog:
         monkeypatch.setattr(rt, "REPO_ROOT", repo / "does-not-exist")
         assert _events.write_event("commit") is False
         assert _events.record_commit("commit") is None
+
+    def test_the_log_follows_the_relocated_state_directory(
+        self, repo, tmp_path, monkeypatch
+    ):
+        elsewhere = tmp_path / "elsewhere"
+        monkeypatch.setenv(rt.STATE_DIR_ENV, str(elsewhere))
+        _commit(repo, "a.txt")
+        assert post_commit.main() == 0
+        assert (elsewhere / _events.EVENTS_FILE).is_file()
+        assert not (repo / ".git" / rt.STATE_DIR).exists()
+        assert _events.read_events()[-1]["event"] == "commit"
 
 
 class TestHookLatency:

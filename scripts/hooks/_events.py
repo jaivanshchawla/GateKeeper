@@ -30,7 +30,9 @@ from scripts.hooks import _policy as policy
 from scripts.hooks import _runtime as rt
 
 # Kept as module constants, and also re-exported by post_commit, because the
-# path is part of the contract with whatever reads the log.
+# path is part of the contract with whatever reads the log. The directory is
+# the *default*: resolve the real location through `rt.state_dir()`, which
+# honours GATEKEEPER_STATE_DIR.
 EVENTS_DIR = rt.STATE_DIR
 EVENTS_FILE = "hook_events.jsonl"
 
@@ -39,9 +41,9 @@ DEFAULT_TAIL = 10
 
 
 def events_path():
-    """Path to the event log, or None outside a git repository."""
-    directory = rt.git_dir()
-    return None if directory is None else directory / EVENTS_DIR / EVENTS_FILE
+    """Path to the event log, or None when there is nowhere to write it."""
+    directory = rt.state_dir(create=False)
+    return None if directory is None else directory / EVENTS_FILE
 
 
 def _now() -> str:

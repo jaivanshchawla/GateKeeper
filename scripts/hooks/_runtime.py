@@ -326,6 +326,15 @@ def python_module(module: str, *args: str) -> list[str]:
 # into the work tree would show up as untracked noise in every `git status`.
 STATE_DIR = "gatekeeper"
 
+# Relocates the directory above. Several hooks answer by reading shared
+# repository state -- `pre-auto-gc` declines while a gate is running -- so a
+# test that cannot redirect that state is not testing the hook, it is
+# reporting on whatever `git push` happens to be doing around it. That is not
+# hypothetical: two shell tests passed standalone and failed under the
+# pre-push gate that was running them, because the gate's own marker was
+# still live. It is also the escape hatch for a read-only git directory.
+STATE_DIR_ENV = "GATEKEEPER_STATE_DIR"
+
 # Marker a long-running hook drops so `pre-auto-gc` can stay out of its way.
 GATE_RUN_FILE = "gate_run.json"
 
@@ -350,13 +359,29 @@ def git_dir() -> Path | None:
     return path if path.is_dir() else None
 
 
-def state_dir() -> Path | None:
-    """Directory hooks may write local state into, created on demand."""
-    directory = git_dir()
-    if directory is None:
+def state_dir(create: bool = True) -> Path | None:
+    """Directory hooks may write local state into, created on demand.
+
+    Honours ``GATEKEEPER_STATE_DIR``, which relocates the directory outright
+    and does not require a repository. Pass ``create=False`` to resolve the
+    path without creating it -- a hook that only *reads* state should not
+    leave an empty directory behind as a side effect.
+    """
+    override = os.environ.get(STATE_DIR_ENV)
+    if override:
+        target = Path(override)
+    else:
+        directory = git_dir()
+        if directory is None:
+            return None
+        target = directory / STATE_DIR
+
+    if not create:
+        return target
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
         return None
-    target = directory / STATE_DIR
-    target.mkdir(parents=True, exist_ok=True)
     return target
 
 
@@ -385,7 +410,7 @@ def begin_gate_run(label: str) -> bool:
 
 def end_gate_run() -> None:
     """Remove the marker written by :func:`begin_gate_run`, if any."""
-    directory = state_dir()
+    directory = state_dir(create=False)
     if directory is None:
         return
     try:
@@ -397,7 +422,7 @@ def end_gate_run() -> None:
 
 def gate_run_active(max_age: float = GATE_RUN_STALE_SECONDS) -> bool:
     """True when a gate hook is mid-run and recently started."""
-    directory = state_dir()
+    directory = state_dir(create=False)
     if directory is None:
         return False
     marker = directory / GATE_RUN_FILE
