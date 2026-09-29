@@ -184,7 +184,7 @@ untestable logic:
 | Addition | Why | Where |
 |----------|-----|-------|
 | **A continued trace.** `HUSKY=2` makes husky's sh dispatcher run `set -x`, but the trace stops the instant the hook hands over to Python — which is where every decision is actually made. `rt.enter()`/`rt.trace()` continue it, printing the resolved repo, the interpreter the hook really got, and the argv. | "Which Python did the hook get?" is the first question when a hook behaves differently in two terminals | `_runtime.py` |
-| **A gate-run marker.** Long gate hooks drop `.git/gatekeeper/gate_run.json` while they run; `pre-auto-gc` declines to repack the object store underneath them. | `gc --auto` repacking during a multi-minute pre-push is contention, and a lock conflict at worst | `begin_gate_run` / `gate_run_active` |
+| **A gate-run marker.** Long gate hooks drop `.git/gatekeeper/gate_run.json` while they run; `pre-auto-gc` declines to repack the object store underneath them. Relocatable with `GATEKEEPER_STATE_DIR`, and ignored once older than 30 minutes. | `gc --auto` repacking during a multi-minute pre-push is contention, and a lock conflict at worst | `begin_gate_run` / `gate_run_active` |
 | **One event log.** `post-commit`, `post-applypatch`, `post-merge` and `post-rewrite` all append to one newline-delimited JSON file, so a reader never has to know which hook wrote a line. | Outcome tracking needs the commit recorded at the one moment only a hook can observe it | `_events.py` |
 | **Shared content checks.** `pre-commit` and `pre-applypatch` call the same function. | Duplicating "lint the staged files, look for conflict markers" in two files is how the two drift | `_checks.py` |
 

@@ -15,6 +15,12 @@ the documented behaviours that were missing, put the layer under CI on three
 operating systems, and finished the hook set: **all 14 hooks husky dispatches**
 now carry policy rather than three of them being deliberate no-ops.
 
+Phase 2 took three passes. The third was not planned: the first attempt to push
+the branch was **blocked by the repository's own pre-push gate**, which found a
+real defect in the tests (§4, B17). That finding is the best evidence available
+that the gate works — it caught its own author, on the change that introduced
+it, and it found something no amount of reading the diff would have shown.
+
 ---
 
 ## 1. Review of the project as it stood
@@ -104,7 +110,7 @@ already failed. We probe every candidate interpreter first and diagnose it at
 
 ## 3. Commit log
 
-Phase 1 (1-19) and Phase 2 (20-40). Each commit is one thing.
+Phase 1 (1-19) and Phase 2 (20-51). Each commit is one thing.
 
 ```
  1 0cbf199 chore(husky): add root package manifest for git-hook tooling
@@ -156,7 +162,11 @@ Phase 1 (1-19) and Phase 2 (20-40). Each commit is one thing.
 45 67a16de feat(hooks): check the toolchain and the generated shims, not just the wiring
 46 fd32d1d test(hooks): cover the new hooks, the doctor and husky's shell layer
 47 7ebc809 ci(hooks): cover the new hooks, the strict doctor and the install lifecycle
-48         docs(husky): document all fourteen hooks and what has no upstream peer
+48 c5e5b46 docs(husky): document all fourteen hooks and what has no upstream peer
+   -- phase 2, third pass: the push that exposed B17 --
+49 3706beb fix(hooks): make the hook state directory relocatable
+50 3831772 ci(hooks): re-run the hook tests under a live gate marker
+51         docs(husky): record the hermeticity bug the gate caught
            (the tip of this branch; its own hash is not recorded because it
            contains this line)
 ```
@@ -302,6 +312,31 @@ run `npm install`*, and is therefore never true on a fresh CI checkout. It now
 checks the structural invariants everywhere and the full doctor only where the
 hooks are actually installed.
 
+**B17 — the hook tests were not hermetic, and the gate that runs them is what
+exposed it.**
+Two shell-level tests drove `pre-auto-gc` and asserted it exits 0. Both passed
+locally and both failed on the very first attempt to push this branch. The
+cause is not in the hook: `pre-auto-gc` answers by reading
+`.git/gatekeeper/gate_run.json`, and the **pre-push hook writes exactly that
+marker while it runs the test suite**. So the tests were asserting "no gate is
+running" from *inside* a gate run, and reporting the surrounding push's state
+instead of the hook's.
+
+This is the more interesting failure of the two, because the hook was right and
+the test was wrong — and the wrongness was invisible until the tests ran in the
+one context they were written for. A suite that only ever passes standalone is
+not evidence about a hook that runs under `git push`.
+
+*Fixed:* local state is now relocatable with `GATEKEEPER_STATE_DIR`. The shell
+tests point it at a temporary directory, so their answer no longer depends on
+what the repository is doing, and two new tests assert both sides of the
+decision under that redirect — same hook, same repository, opposite answers.
+The escape hatch earns its keep twice over: it is also the right answer for a
+read-only git directory. Verified by re-running the whole hook suite with a
+live marker deliberately planted in `.git/gatekeeper/` — the condition that
+failed — which now passes, while the real shim still declines (exit 1) under
+that same marker.
+
 ---
 
 ## 5. Verification
@@ -328,6 +363,9 @@ hooks are actually installed.
 | Flag-shaped `core.hooksPath` | `git config core.hooksPath --version/_` then the doctor | exit 1 (B1 reproduced on purpose, then restored) |
 | `git am` content gate | a patch that would fail `pre-commit` | refused by `pre-applypatch` (B16) |
 | Gate-run marker | marker written, then read by `pre-auto-gc` | collection declined while fresh; allowed once stale |
+| Relocatable state | `GATEKEEPER_STATE_DIR=<tmp>` | the marker and the event log both follow it (B17) |
+| Hook suites under a live gate | suites re-run with a marker planted in `.git/gatekeeper/` | **168 passed** — the run that failed before the fix (B17) |
+| Real shim under a live gate | `sh .husky/_/pre-auto-gc` with the marker present | exit 1, "skipping background gc"; exit 0 without it |
 | Tracing | `HUSKY=2 sh .husky/_/pre-auto-gc` | sh `set -x` **and** `pre-auto-gc: interpreter=...` from Python |
 | Install / uninstall round trip | `node .husky/uninstall.mjs` then `install.mjs` | `core.hooksPath` unset and restored; `.husky/_` removed and regenerated |
 | CI-safe install | `CI=true node .husky/install.mjs` | skips; `HUSKY=1` forces a real install |
@@ -368,7 +406,11 @@ npm run hooks:uninstall  # unset core.hooksPath and remove .husky/_
 
 Bypass hatches: `GATEKEEPER_SKIP_HOOKS=<hook|all>`,
 `GATEKEEPER_HOOK_TESTS=0`, `GATEKEEPER_ALLOW_PROTECTED=1`, `GATE1_BLOCK=1`,
-`HUSKY=0`, `GATEKEEPER_PYTHON`, and git's own `git commit -n`.
+`HUSKY=0`, `GATEKEEPER_PYTHON`, `GATEKEEPER_STATE_DIR`, and git's own
+`git commit -n`.
+
+Debug hatches: `HUSKY=2` (or `GATEKEEPER_TRACE=1` when husky is bypassed) traces
+the whole chain, including the interpreter each hook resolved to.
 
 CI (`.github/workflows/hooks.yml`) is now three jobs. `hooks` installs husky on
 ubuntu, macOS and Windows across Python 3.11 and 3.12, runs the doctor with

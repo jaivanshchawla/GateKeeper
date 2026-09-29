@@ -197,10 +197,24 @@ GATEKEEPER_ALLOW_PROTECTED=1 git merge ...
 | Skip only the test stage | `GATEKEEPER_HOOK_TESTS=0 git push` |
 | Allow a protected-branch operation | `GATEKEEPER_ALLOW_PROTECTED=1 git merge ...` |
 | Force a specific Python | `GATEKEEPER_PYTHON=/path/to/python git push` |
+| Move local hook state | `GATEKEEPER_STATE_DIR=/tmp/gk-state git push` |
 | Skip hooks entirely (git) | `git commit -n` |
 
 `GATEKEEPER_SKIP_HOOKS` is a comma list and only disables the hooks it names —
 `commit-msg,pre-push` does not disable `pre-commit`.
+
+## Local state
+
+The hooks keep their local state in `.git/gatekeeper/`: the outcome log
+(`hook_events.jsonl`, read back with `verify --events`) and the gate-run marker
+that `pre-auto-gc` reads. It lives inside the git directory rather than the work
+tree on purpose — a hook that dropped an untracked file into the checkout would
+show up in every `git status`, including the ones these hooks themselves read.
+
+`GATEKEEPER_STATE_DIR` relocates it. That is the escape hatch for a read-only
+git directory, and it is also what makes the hooks testable: `pre-auto-gc`
+answers by reading state the *repository* owns, so a test that could not
+redirect it would be reporting on whatever `git push` was doing at the time.
 
 ## Startup files and CI
 
