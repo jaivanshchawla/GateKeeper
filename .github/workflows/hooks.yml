@@ -1,15 +1,19 @@
 # Validates the husky-managed git hooks.
 #
-# Two jobs, because they fail for different reasons and one is fast:
+# Three jobs, because they fail for different reasons and one is fast:
 #
-#   hooks  -- installs husky for real on three operating systems, checks the
-#             wiring, and runs the hook suite. No ML dependencies.
-#   suite  -- runs the project's own test suite, so a hook change cannot break
-#             the thing it is gating.
+#   hooks     -- installs husky for real on three operating systems, checks the
+#                wiring, and runs the hook suite. No ML dependencies.
+#   installer -- the install/uninstall lifecycle across the Node versions the
+#                package claims to support.
+#   suite     -- runs the project's own test suite, so a hook change cannot
+#                break the thing it is gating.
 #
 # The `hooks` matrix mirrors husky's own CI (ubuntu/macOS/Windows), because the
 # bootstrap in .husky/lib/bootstrap.sh exists specifically to survive the
-# differences between them.
+# differences between them. That job runs the shell-level specs by way of the
+# test suite: an init.sh that is really sourced, one that turns the hooks off
+# with HUSKY=0, and a `set -u` shell are all asserted there on all three OSes.
 
 name: Hooks
 
@@ -52,11 +56,15 @@ jobs:
           HUSKY: "1"
         run: node .husky/install.mjs
 
+      # --strict: this job installed everything, so a "missing from this
+      # machine" warning here really is a failure.
       - name: Verify the hook wiring
-        run: python -m scripts.hooks.verify
+        run: python -m scripts.hooks.verify --strict
 
       - name: List the hook inventory
-        run: python -m scripts.hooks.verify --list
+        run: |
+          python -m scripts.hooks.verify --list
+          python -m scripts.hooks.verify --list 2>&1 | grep -q "14/14 husky hooks"
 
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pytest
@@ -69,6 +77,34 @@ jobs:
       - name: Run the real pre-commit shim
         if: runner.os != 'Windows'
         run: sh .husky/_/pre-commit
+
+      # The git-am and housekeeping hooks, through the same chain. Nothing is
+      # staged in a fresh checkout, so they should report clean and exit 0.
+      - name: Run the real git-am and gc shims
+        if: runner.os != 'Windows'
+        run: |
+          sh .husky/_/pre-applypatch
+          sh .husky/_/post-applypatch
+          sh .husky/_/pre-auto-gc
+
+      # HUSKY=2 turns on husky's own `set -x`. It must reach the Python layer
+      # too, which is where the interpreter decision is actually made.
+      - name: Trace a hook end to end
+        if: runner.os == 'Linux'
+        run: |
+          HUSKY=2 sh .husky/_/pre-auto-gc 2>&1 | tee trace.log
+          grep -q "pre-auto-gc: interpreter=" trace.log
+
+      # The damage `npx husky --version` does must be caught, not tolerated.
+      - name: The doctor catches a flag-shaped hooksPath
+        if: runner.os == 'Linux'
+        run: |
+          git config core.hooksPath --version/_
+          if python -m scripts.hooks.verify >/dev/null 2>&1; then
+            echo "::error::the doctor accepted a flag-shaped core.hooksPath"
+            exit 1
+          fi
+          git config core.hooksPath .husky/_
 
       - name: Reject a bad commit subject through the real commit-msg shim
         if: runner.os != 'Windows'
@@ -92,12 +128,68 @@ jobs:
       # Errors only. Style findings on a 37-line bootstrap are noise, but a
       # genuine syntax error in the sh layer would take every hook down with
       # no error from git at all, which is exactly what this catches.
-      - name: Shellcheck the hook shell scripts
+      #
+      # Every shim, not a hand-picked few: the list comes from the same tuple
+      # the doctor and the tests read, so adding a hook cannot quietly skip
+      # this check.
+      - name: Shellcheck every hook shell script
         if: runner.os == 'Linux'
         run: |
-          shellcheck --shell=sh --severity=error \
-            .husky/pre-commit .husky/commit-msg .husky/pre-push \
-            .husky/lib/bootstrap.sh .husky/lib/common.sh
+          shellcheck --shell=sh --severity=error .husky/lib/bootstrap.sh .husky/lib/common.sh
+          python -c "from scripts.hooks import _runtime as rt; print(' '.join('.husky/' + h for h in rt.HOOKS))" > shims.txt
+          # shellcheck disable=SC2046
+          shellcheck --shell=sh --severity=error $(cat shims.txt)
+
+  installer:
+    name: installer (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json declares engines.node >=18, so the floor is asserted as
+        # well as the two versions someone is likely to be running.
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # --ignore-scripts so the lifecycle is driven explicitly and a failure
+      # can be attributed to the step that caused it.
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install, uninstall and reinstall
+        env:
+          HUSKY: "1"
+        run: |
+          set -e
+          node .husky/install.mjs
+          test "$(git config --get core.hooksPath)" = ".husky/_"
+          test -f .husky/_/h
+
+          # husky v9 removed `husky uninstall`. Unsetting the key alone would
+          # leave the generated shims for the next install to inherit.
+          node .husky/uninstall.mjs
+          test -z "$(git config --get core.hooksPath || true)"
+          test ! -d .husky/_
+
+          node .husky/install.mjs
+          test "$(git config --get core.hooksPath)" = ".husky/_"
+          python -m scripts.hooks.verify --strict
+
+      - name: A production install must not fail for want of a devDependency
+        env:
+          NODE_ENV: production
+        run: |
+          node .husky/install.mjs
+          test "$(git config --get core.hooksPath)" = ".husky/_"
 
   suite:
     name: project test suite
