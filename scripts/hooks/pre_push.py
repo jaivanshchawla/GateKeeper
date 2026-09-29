@@ -17,6 +17,9 @@ Stages, in order:
 The pushed refs arrive on stdin in git's pre-push format; they are read
 once here and forwarded verbatim to the Gate 1 script, which expects them.
 
+While the stages run, a marker in the git directory tells ``pre-auto-gc``
+not to repack the object store underneath this hook's reads.
+
 Bypass: ``GATEKEEPER_SKIP_HOOKS=pre-push git push ...``
 """
 
@@ -60,17 +63,8 @@ def _tests_enabled() -> bool:
     return os.environ.get("GATEKEEPER_HOOK_TESTS", "1") not in {"0", "false", "no"}
 
 
-def main() -> int:
-    # Read stdin first: it can only be consumed once, and only the
-    # pre-push stage ever populates it.
-    stdin_data = ""
-    if not sys.stdin.isatty():
-        stdin_data = sys.stdin.read()
-
-    if rt.skipped("pre-push"):
-        rt.log(f"{rt.BANNER} pre-push skipped via {rt.SKIP_ENV}")
-        return 0
-
+def _gate(stdin_data: str) -> int:
+    """Gate 1, then ruff and pytest over what this push actually changes."""
     failures: list[str] = []
 
     if _gate1(stdin_data) != 0:
@@ -103,6 +97,30 @@ def main() -> int:
 
     rt.log(f"{rt.BANNER} pre-push gate passed")
     return 0
+
+
+def main() -> int:
+    # Read stdin first: it can only be consumed once, and only the
+    # pre-push stage ever populates it.
+    stdin_data = ""
+    if not sys.stdin.isatty():
+        stdin_data = sys.stdin.read()
+    rt.enter("pre-push")
+    rt.trace(f"pre-push: refs={stdin_data.strip()!r}")
+
+    if rt.skipped("pre-push"):
+        rt.log(f"{rt.BANNER} pre-push skipped via {rt.SKIP_ENV}")
+        return 0
+
+    # This hook is the only long-running one: it scores commits, lints a diff
+    # and runs the whole test suite. The marker tells pre-auto-gc to leave the
+    # object store alone until the gate is done. `finally` matters more than
+    # usual here -- a blocked push must not leave the marker behind.
+    rt.begin_gate_run("pre-push")
+    try:
+        return _gate(stdin_data)
+    finally:
+        rt.end_gate_run()
 
 
 if __name__ == "__main__":

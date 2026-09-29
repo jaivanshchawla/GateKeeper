@@ -20,6 +20,7 @@ from scripts.hooks.commit_msg import first_meaningful_line, lint_subject
 
 
 def main(argv: list[str]) -> int:
+    rt.enter("applypatch-msg", argv)
     if rt.skipped("applypatch-msg"):
         rt.log(f"{rt.BANNER} applypatch-msg skipped via {rt.SKIP_ENV}")
         return 0

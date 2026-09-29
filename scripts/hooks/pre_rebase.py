@@ -23,6 +23,7 @@ OVERRIDE_ENV = "GATEKEEPER_ALLOW_PROTECTED"
 
 
 def main(argv: list[str]) -> int:
+    rt.enter("pre-rebase", argv)
     if rt.skipped("pre-rebase"):
         rt.log(f"{rt.BANNER} pre-rebase skipped via {rt.SKIP_ENV}")
         return 0

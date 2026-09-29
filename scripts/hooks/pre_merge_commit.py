@@ -21,6 +21,7 @@ OVERRIDE_ENV = "GATEKEEPER_ALLOW_PROTECTED"
 
 
 def main() -> int:
+    rt.enter("pre-merge-commit")
     if rt.skipped("pre-merge-commit"):
         rt.log(f"{rt.BANNER} pre-merge-commit skipped via {rt.SKIP_ENV}")
         return 0

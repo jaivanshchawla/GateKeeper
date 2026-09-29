@@ -31,6 +31,7 @@ def report() -> None:
 
 
 def main(argv: list[str]) -> int:
+    rt.enter("post-checkout", argv)
     # argv[2] is the branch flag; anything but "1" is a file checkout.
     if len(argv) < 3 or argv[2] != "1":
         return 0

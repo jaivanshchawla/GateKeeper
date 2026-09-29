@@ -59,6 +59,7 @@ def _cheat_sheet(protected_branch: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    rt.enter("prepare-commit-msg", argv)
     if rt.skipped("prepare-commit-msg"):
         rt.log(f"{rt.BANNER} prepare-commit-msg skipped via {rt.SKIP_ENV}")
         return 0

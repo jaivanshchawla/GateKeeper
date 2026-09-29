@@ -92,6 +92,7 @@ def first_meaningful_line(message: str) -> str:
 
 
 def main(argv: list[str]) -> int:
+    rt.enter("commit-msg", argv)
     if rt.skipped("commit-msg"):
         rt.log(f"{rt.BANNER} commit-msg skipped via {rt.SKIP_ENV}")
         return 0
