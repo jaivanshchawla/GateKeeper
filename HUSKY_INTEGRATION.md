@@ -10,9 +10,10 @@ repo's git-hook manager, and close the gaps that integration exposed.
 [`docs/HUSKY-UPSTREAM.md`](docs/HUSKY-UPSTREAM.md) (husky mapped file by file).
 
 Two phases. **Phase 1** replaced the two competing hook installers and wired
-three hooks. **Phase 2** went through husky upstream feature by feature, grew
-the hook set to 11, adopted the documented behaviours that were missing, and
-put the layer under CI on three operating systems.
+three hooks. **Phase 2** went through husky upstream feature by feature, adopted
+the documented behaviours that were missing, put the layer under CI on three
+operating systems, and finished the hook set: **all 14 hooks husky dispatches**
+now carry policy rather than three of them being deliberate no-ops.
 
 ---
 
@@ -80,7 +81,8 @@ adopt/skip decision; the full table is in
 | `husky init` | `npm run hooks:init` — install *and* verify |
 | `husky uninstall` (removed in v9) | Reimplemented: unset `core.hooksPath` **and** remove `.husky/_` |
 | Windows `winpty` tty workaround | Adopted, made opt-in (upstream's version discards stdin — see below) |
-| The 14-hook dispatch set | 11 implemented, 3 left as deliberate no-ops |
+| The 14-hook dispatch set | **All 14 implemented.** The three that looked like no-ops were holes, not redundancies — see §4 B16 |
+| `HUSKY=2` debug tracing | Adopted, and **continued past the shell boundary** into `rt.trace`, where the decisions are actually made |
 | Non-shell hooks, POSIX-only shell, `--no-verify` | Documented, and the doctor permits the helper-file pattern |
 | Upstream's own test structure | Mirrored: a throwaway real git repo per test |
 
@@ -146,6 +148,17 @@ Phase 1 (1-19) and Phase 2 (20-40). Each commit is one thing.
 38 c5ebf03 fix(husky): stop a wrong $0 from silently killing every hook
 39 230d377 ci: validate the hook layer on three operating systems
 40 6913355 feat(hooks): apply the message rules to git am patches
+   -- phase 2, second pass: husky upstream re-read file by file --
+41 43968ba docs(husky): map husky upstream file by file, feature by feature
+42 2216963 docs: document the eleven hooks, the new commands and the CI
+43 4b9c93f ci: install the runtime-only deps the test suite actually needs
+44 945d8d3 feat(hooks): implement every hook husky dispatches
+45 67a16de feat(hooks): check the toolchain and the generated shims, not just the wiring
+46 fd32d1d test(hooks): cover the new hooks, the doctor and husky's shell layer
+47 7ebc809 ci(hooks): cover the new hooks, the strict doctor and the install lifecycle
+48         docs(husky): document all fourteen hooks and what has no upstream peer
+           (the tip of this branch; its own hash is not recorded because it
+           contains this line)
 ```
 
 Nothing is merged into `main`.
@@ -250,18 +263,56 @@ Moving to `python -m scripts.hooks.<hook>` removed the four-line `sys.path` shim
 duplicated in five files, but silently invalidated `npm run hooks:verify`, which
 still called the doctor by path. Caught while wiring the new npm scripts.
 
+**B14 — `project_python()` trusted a PATH lookup over the interpreter that was
+already proven to work.**
+The resolution order put `python3` on `PATH` above `sys.executable`. On Windows
+`python3` is routinely the Microsoft Store alias stub, which is on `PATH`,
+exits non-zero, and prints an install advert — so every tool invocation failed
+and `ruff` was reported as *lint errors* rather than as a broken interpreter,
+which is precisely the misleading failure B2 made the bootstrap avoid. The
+interpreter already running the hook now outranks the lookup, because
+`bootstrap.sh` has already proved it starts. Caught by the integration tests
+written in the same pass (commit `fd32d1d`), which is the point of writing them
+against a real temporary repo rather than a mock.
+
+**B15 — `rt.git()` raised instead of degrading when the working directory had
+gone.**
+`subprocess.run(..., cwd=REPO_ROOT)` raises `FileNotFoundError` if that
+directory no longer exists — a hook firing after a `git clean` of the checkout,
+or on a CI runner tearing its workspace down. A hook is the wrong place for a
+traceback, and the failure was indistinguishable from a hook crash. It now
+reports `127` like any other git failure and lets the caller decide.
+
+**B16 — the three "no-op" hooks were holes, not redundancies.**
+`pre-applypatch`, `post-applypatch` and `pre-auto-gc` were left unimplemented on
+the reasoning that they duplicated `applypatch-msg` and had nothing to decide.
+Reading git's actual dispatch order showed otherwise: `git am` runs
+`applypatch-msg`, `pre-applypatch` and `post-applypatch` and **none** of the
+commit hooks. So a patch series landed content that never went through
+`pre-commit`, and its commits were never recorded for outcome tracking either.
+`pre-auto-gc` was meanwhile free to repack the object store underneath a
+multi-minute `pre-push` that was reading history and scoring commits.
+*Fixed:* all three carry policy now, and the two shared concerns moved into one
+module each (`_checks.py`, `_events.py`) so the commit path and the patch path
+cannot drift apart again.
+
+**Test bug, not a code bug.** The first doctor test asserted that
+`python -m scripts.hooks.verify` exits 0 — which asserts that *this machine has
+run `npm install`*, and is therefore never true on a fresh CI checkout. It now
+checks the structural invariants everywhere and the full doctor only where the
+hooks are actually installed.
+
 ---
 
 ## 5. Verification
 
 | Check | Command | Result |
 |-------|---------|--------|
-| Hook unit tests | `python -m pytest tests/test_hooks.py -q` | **36 passed** |
-| Hook integration tests | `python -m pytest tests/test_hook_integration.py -q` | **57 passed** |
-| Both hook suites | `python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q` | **93 passed** |
-| Whole suite | `python -m pytest tests/ -q` | **131 passed** (2 pre-existing deprecation warnings) |
+| Hook unit tests | `python -m pytest tests/test_hooks.py -q` | **58 passed** |
+| Hook integration tests | `python -m pytest tests/test_hook_integration.py -q` | **104 passed** |
+| Both hook suites | `python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q` | **162 passed** |
+| Whole suite | `python -m pytest tests/ -q` | **258 passed** (2 pre-existing deprecation warnings) |
 | Lint on new code | `ruff check scripts/hooks/ tests/test_hooks.py` | clean |
-| Wiring doctor | `python scripts/hooks/verify.py` | all checks passed |
 | Bad message rejected | `git commit -m "totally bogus message"` | exit 1, hook blocked |
 | Good message accepted | `git commit -m "feat(hooks): ..."` | exit 0 |
 | Lint error blocked | committing a file with a ruff violation | exit 1, hook blocked (happened twice, both times on real findings) |
@@ -270,7 +321,14 @@ still called the doctor by path. Caught while wiring the new npm scripts.
 | `init` with husky | scratch repo with `.husky/` | stood down, wrote no hook |
 | Gate 1 end-to-end | pre-push with simulated refs | scored 5 commits with bands and SHAP reasons |
 | Full pre-push | Gate 1 + ruff + pytest | passed; ruff clean on 7 changed files |
-| Doctor | `python -m scripts.hooks.verify` | all 4 checks pass, 11 hooks |
+| Doctor | `python -m scripts.hooks.verify` | all 8 checks pass, 14 hooks |
+| Doctor, strict | `python -m scripts.hooks.verify --strict` | passes on an installed machine; the CI runner uses this |
+| Doctor inventory | `python -m scripts.hooks.verify --list` | `14/14 husky hooks`, with the block/report kind per hook |
+| Event log | `python -m scripts.hooks.verify --events` | the last 10 records, one per commit and per `git am` patch |
+| Flag-shaped `core.hooksPath` | `git config core.hooksPath --version/_` then the doctor | exit 1 (B1 reproduced on purpose, then restored) |
+| `git am` content gate | a patch that would fail `pre-commit` | refused by `pre-applypatch` (B16) |
+| Gate-run marker | marker written, then read by `pre-auto-gc` | collection declined while fresh; allowed once stale |
+| Tracing | `HUSKY=2 sh .husky/_/pre-auto-gc` | sh `set -x` **and** `pre-auto-gc: interpreter=...` from Python |
 | Install / uninstall round trip | `node .husky/uninstall.mjs` then `install.mjs` | `core.hooksPath` unset and restored; `.husky/_` removed and regenerated |
 | CI-safe install | `CI=true node .husky/install.mjs` | skips; `HUSKY=1` forces a real install |
 | Real shims | `sh .husky/_/pre-commit`, `.husky/_/commit-msg` | 0 on a clean tree; 1 for a bad subject |
@@ -312,10 +370,14 @@ Bypass hatches: `GATEKEEPER_SKIP_HOOKS=<hook|all>`,
 `GATEKEEPER_HOOK_TESTS=0`, `GATEKEEPER_ALLOW_PROTECTED=1`, `GATE1_BLOCK=1`,
 `HUSKY=0`, `GATEKEEPER_PYTHON`, and git's own `git commit -n`.
 
-CI (`.github/workflows/hooks.yml`) installs husky on ubuntu, macOS and Windows
-across Python 3.11 and 3.12, runs the doctor, runs both hook suites, and
-exercises the real `.husky/_` shims through the shell git uses. A second job
-runs the project's own test suite.
+CI (`.github/workflows/hooks.yml`) is now three jobs. `hooks` installs husky on
+ubuntu, macOS and Windows across Python 3.11 and 3.12, runs the doctor with
+`--strict`, asserts the `14/14` inventory, runs both hook suites, exercises the
+real `.husky/_` shims through the shell git uses, traces one hook end to end,
+reproduces the flag-shaped `core.hooksPath`, and shellchecks *every* shim — the
+list comes from `rt.HOOKS`, so a new hook cannot skip the check. `installer`
+walks install → uninstall → reinstall on Node 18, 20 and 22, plus a
+`NODE_ENV=production` install. `suite` runs the project's own test suite.
 
 ---
 
@@ -340,9 +402,6 @@ Carried forward, **not** fixed on this branch:
 - **`.pre-commit-config.yaml` is still not installed anywhere.** It is kept as
   the declarative policy record, but nothing verifies it still matches what the
   husky hooks actually enforce. Two descriptions of one policy can drift.
-- **`pre-applypatch`, `post-applypatch`, `pre-auto-gc` are no-ops.** Deliberate:
-  the first two would duplicate `applypatch-msg`, and auto-gc has nothing for
-  the gate to decide.
 - **A custom hooks directory is not supported.** The hook modules import
   `scripts/hooks/*`, which only resolve at the repository root, so a nested
   hooks directory (upstream's `husky sub/.husky`) cannot work here. The doctor
@@ -363,4 +422,12 @@ Carried forward, **not** fixed on this branch:
 - **`gate1` and the other npm scripts still call Python scripts by path.**
   That is correct for them (they set their own `sys.path`), but it is a second
   invocation convention next to the hooks' `-m` one.
+- **12 of git's 28 hooks are still not implemented**, and that is the right
+  call: `pre-receive`, `update`, `post-receive`, `post-update`,
+  `reference-transaction`, `push-to-checkout` and `sendemail-validate` are
+  server-side, `fsmonitor-watchman` is a filesystem-daemon integration, the four
+  `p4-*` hooks are Perforce bridges, and `post-index-change` fires on every
+  index touch. husky's 14 are the ones that apply to a *client* repository, and
+  now all 14 are ours. `KNOWN_GIT_HOOKS` lists the full 28 so the doctor can
+  still tell a real hook name from a typo.
 - **Not merged into `main`**, as requested.

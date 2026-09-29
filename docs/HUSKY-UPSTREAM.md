@@ -46,11 +46,13 @@ per test. That structure is what our `tests/test_hook_integration.py` copies.
 | Handles `git` being absent | **Skipped** | Their Node-API edge case; our hooks run *from* git |
 | Writes `.husky/_/.gitignore` containing `*` | **Relied on** | Keeps generated shims out of every `git status` |
 | Copies `husky` to `.husky/_/h` with mode `0755` | **Relied on** | The dispatcher in §3 |
-| Writes 14 hook shims into `.husky/_/` | **Relied on** | Husky dispatches all 14; we implement the 11 that apply (§5) |
+| Writes 14 hook shims into `.husky/_/` | **Relied on** | Husky dispatches all 14; we implement all 14 (§5) |
 
 **A useful consequence:** husky's `_/` shims exist for all 14 names it knows,
-so adding a hook is only ever "create `.husky/<name>` and a module". We ship 11
-of those 14 and leave the other 3 as intentional no-ops.
+so adding a hook is only ever "create `.husky/<name>` and a module". We ship all
+14, and `rt.HOOKS` and `rt.HUSKY_HOOKS` are now the same set — the doctor
+asserts that, because a shim husky never dispatches is a file that can never
+run.
 
 ---
 
@@ -60,7 +62,7 @@ Every `.husky/_/<hook>` is `. "$(dirname "$0")/h"`. `h` then:
 
 | Behaviour | Decision | Notes |
 |-----------|----------|-------|
-| `[ "$HUSKY" = "2" ] && set -x` — debug tracing | **Adopted** | Reproduced in `bootstrap.sh` for the sh layer |
+| `[ "$HUSKY" = "2" ] && set -x` — debug tracing | **Adopted and extended** | Reproduced in `bootstrap.sh`, then continued into Python via `rt.trace`/`rt.enter`, so one variable traces the whole chain (§6.1) |
 | Resolves `$s` to `.husky/<hook>` | **Relied on** | How our shims get invoked |
 | Missing `.husky/<hook>` exits 0 | **Relied on** | An unimplemented hook is a no-op, not an error |
 | Warns when `~/.huskyrc` exists | **Relied on** | Upstream's deprecation notice |
@@ -108,32 +110,40 @@ building this integration. The doctor now asserts the value and names the cause.
 
 ## 5. Hook inventory
 
-husky supports 14; git supports 28. We ship **11**.
+husky supports 14 and git supports 28. We ship **all 14 of husky's**: every
+shim husky writes a dispatcher for has a real script behind it.
 
 | Hook | Upstream shim | Ours | Kind |
 |------|---------------|------|------|
 | `applypatch-msg` | yes | `applypatch_msg.py` | blocks |
+| `pre-applypatch` | yes | `pre_applypatch.py` | blocks |
+| `post-applypatch` | yes | `post_applypatch.py` | reports |
 | `pre-commit` | yes | `pre_commit.py` | blocks |
+| `pre-merge-commit` | yes | `pre_merge_commit.py` | blocks |
 | `prepare-commit-msg` | yes | `prepare_commit_msg.py` | reports |
 | `commit-msg` | yes | `commit_msg.py` | blocks |
-| `pre-merge-commit` | yes | `pre_merge_commit.py` | blocks |
-| `pre-rebase` | yes | `pre_rebase.py` | blocks |
-| `pre-push` | yes | `pre_push.py` | blocks (Gate 1 within it is advisory) |
 | `post-commit` | yes | `post_commit.py` | reports |
-| `post-merge` | yes | `post_merge.py` | reports |
+| `pre-rebase` | yes | `pre_rebase.py` | blocks |
 | `post-checkout` | yes | `post_checkout.py` | reports |
 | `post-rewrite` | yes | `post_rewrite.py` | reports |
-| `pre-applypatch` | yes | — | **no-op by design** |
-| `post-applypatch` | yes | — | **no-op by design** |
-| `pre-auto-gc` | yes | — | **no-op by design** |
+| `post-merge` | yes | `post_merge.py` | reports |
+| `pre-push` | yes | `pre_push.py` | blocks (Gate 1 within it is advisory) |
+| `pre-auto-gc` | yes | `pre_auto_gc.py` | declines housekeeping |
 
-The three no-ops are deliberate: `pre/post-applypatch` would duplicate
-`applypatch-msg`, which is the only one of the three that can reject a bad
-patch *before* it is applied, and `pre-auto-gc` fires on a background
-housekeeping task the gate has nothing to say about.
+Two of those exist to close gaps in git's own hook *ordering* rather than to add
+policy:
 
-`applypatch-msg` exists because `git am` never runs `commit-msg`, so without it
-a patch series could land with subjects the rest of the gate would reject.
+* `applypatch-msg` exists because `git am` never runs `commit-msg`, so without
+  it a patch series could land with subjects the rest of the gate would reject.
+* `pre-applypatch` exists because `git am` never runs `pre-commit` either. A
+  hand-made commit and an applied patch would otherwise go through *different*
+  content checks; both hooks call the same `_checks.run()`.
+
+The remaining two report rather than judge. `post-applypatch` records the commit
+`git am` created into the same event log as `post-commit`, so a patch series is
+visible to outcome tracking. `pre-auto-gc` is the only hook where a non-zero
+exit is not a failure at all — it tells git to skip its background `gc --auto`
+while a gate hook holds the run marker (§6.1).
 
 ---
 
@@ -146,21 +156,41 @@ it:
 | Hook | Policy | Reuses |
 |------|--------|--------|
 | `pre-commit` | ruff on staged files; conflict markers | `ruff`, git's own `diff --cached --check` |
+| `pre-applypatch` | the same staged-content checks, for `git am` | `_checks.run()` |
 | `commit-msg` | conventional subjects | allow-list read from this repo's `git log` |
 | `applypatch-msg` | the same subject rules for `git am` | `commit_msg.lint_subject` |
 | `prepare-commit-msg` | `direct_to_main`; seeds the type list | `.gatekeeper.yml` |
 | `pre-merge-commit` | refuses merges into protected branches | `_policy.protected_branches()` |
 | `pre-rebase` | refuses rebasing protected branches | same |
 | `pre-push` | Gate 1 scoring, diff-scoped ruff, pytest | `scripts/pre_push_score.py` |
-| `post-commit` | writes an outcome-tracking record | `.git/gatekeeper/hook_events.jsonl` |
-| `post-merge` | flags merges that changed the gate | `.gatekeeper.yml` |
+| `post-commit` | writes an outcome-tracking record | `_events.record_commit()` |
+| `post-applypatch` | the same record, for a `git am` patch | `_events.record_commit()` |
+| `post-merge` | records the merge and flags gate changes | `_events`, `.gatekeeper.yml` |
 | `post-checkout` | reports branch gate context | same |
-| `post-rewrite` | reports invalidated scores | same |
+| `post-rewrite` | records amended/rebased-away shas | `_events`, `.gatekeeper.yml` |
+| `pre-auto-gc` | declines background `gc --auto` during a gate run | `_runtime.gate_run_active()` |
 
 `protected_branches` is new configuration this work added to `.gatekeeper.yml`,
 kept separate from the existing `branch_rules` — the latter tunes *which rules*
 block on a branch, the former says whether the branch is directly writable at
 all.
+
+### 6.1 What has no upstream equivalent at all
+
+Upstream's surface is an installer, a dispatcher and a naming convention. Four
+things here are ours, and each exists because a hook is a poor place for
+untestable logic:
+
+| Addition | Why | Where |
+|----------|-----|-------|
+| **A continued trace.** `HUSKY=2` makes husky's sh dispatcher run `set -x`, but the trace stops the instant the hook hands over to Python — which is where every decision is actually made. `rt.enter()`/`rt.trace()` continue it, printing the resolved repo, the interpreter the hook really got, and the argv. | "Which Python did the hook get?" is the first question when a hook behaves differently in two terminals | `_runtime.py` |
+| **A gate-run marker.** Long gate hooks drop `.git/gatekeeper/gate_run.json` while they run; `pre-auto-gc` declines to repack the object store underneath them. | `gc --auto` repacking during a multi-minute pre-push is contention, and a lock conflict at worst | `begin_gate_run` / `gate_run_active` |
+| **One event log.** `post-commit`, `post-applypatch`, `post-merge` and `post-rewrite` all append to one newline-delimited JSON file, so a reader never has to know which hook wrote a line. | Outcome tracking needs the commit recorded at the one moment only a hook can observe it | `_events.py` |
+| **Shared content checks.** `pre-commit` and `pre-applypatch` call the same function. | Duplicating "lint the staged files, look for conflict markers" in two files is how the two drift | `_checks.py` |
+
+All four are inside the git directory, never the work tree: a hook that litters
+the checkout with an untracked file would show up in every `git status`, which
+is itself something these hooks read.
 
 ---
 
@@ -201,8 +231,7 @@ neither stdin-reading hook ever calls it.
 | Custom hooks directory (`husky sub/.husky`) | The hooks here are repo-specific: they import `scripts/hooks/*`, which only exist at the repository root. Supporting a nested directory would mean the modules could not resolve. The doctor reads `core.hooksPath` rather than assuming it, so a moved directory is at least reported |
 | Sub-directory project scaffolding | Same reason |
 | `husky add` / `set` | Deprecated upstream; creating a file is clearer than a command that templates one |
-| `pre-applypatch` / `post-applypatch` | `applypatch-msg` is the only one that can reject a patch before it lands; the other two would duplicate it |
-| `pre-auto-gc` | Background housekeeping with nothing for the gate to decide |
+| Server-side hooks (`pre-receive`, `update`, `post-receive`, `fsmonitor-watchman`, the `p4-*` family) | They do not run in a client repository. Of git's 28 hook names, husky dispatches the 14 that do, and all 14 are implemented here. `KNOWN_GIT_HOOKS` still carries the full 28 so the doctor can tell a real name from a typo |
 | `pinst` (Yarn publish-time disable) | This package is `private: true` and is never published |
 | Translations of the docs | Not our docs to translate |
 
@@ -226,16 +255,17 @@ neither stdin-reading hook ever calls it.
 | `12_deprecated.sh` | the v8 shim header is tolerated | n/a — v9 format only |
 
 Our hook suite is `tests/test_hooks.py` (unit) and
-`tests/test_hook_integration.py` (real git repos, real shell). 93 tests.
+`tests/test_hook_integration.py` (real git repos, real shell). 162 tests.
 
 ---
 
 ## 10. Summary
 
 Upstream gives us a dispatcher, a naming convention, and a set of documented
-escape hatches. We take all three, keep the sh layer two lines deep, and put
-every decision in Python where it can be tested. The three places we knowingly
-diverge — diagnosing the interpreter before the hook runs, making the tty
-workaround opt-in, and implementing `uninstall` properly — are all cases where
-the upstream behaviour was right for a general-purpose tool and wrong for a
-hook that has to read git's stdin and fail visibly.
+escape hatches. We take all three, keep the sh layer two lines deep, put every
+decision in Python where it can be tested, and implement all 14 hooks it
+dispatches rather than stopping at the ones with obvious policy. The three
+places we knowingly diverge — diagnosing the interpreter before the hook runs,
+making the tty workaround opt-in, and implementing `uninstall` properly — are
+all cases where the upstream behaviour was right for a general-purpose tool and
+wrong for a hook that has to read git's stdin and fail visibly.
