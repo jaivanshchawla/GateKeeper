@@ -20,7 +20,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from scripts.hooks import _runtime as rt
-from scripts.hooks import commit_msg
+from scripts.hooks import commit_msg, verify
 
 
 class TestCommitMessageRules:
@@ -161,24 +161,113 @@ class TestRuntimeResolution:
         assert rt.skipped("pre-push") is True
         assert rt.skipped("anything") is True
 
+    def test_every_husky_hook_is_implemented(self):
+        """husky writes a dispatcher for all 14; we ship a script for each.
+
+        A hook husky does not dispatch would be a file that can never run,
+        and one it dispatches with nothing behind it is silent dead weight.
+        """
+        assert set(rt.HOOKS) == set(rt.HUSKY_HOOKS)
+        assert len(rt.HOOKS) == 14
+
+    def test_blocking_hooks_are_a_subset_of_the_shipped_hooks(self):
+        assert set(rt.BLOCKING_HOOKS).issubset(set(rt.HOOKS))
+
+    def test_hooks_are_listed_in_git_execution_order(self):
+        # githooks(5) order. Reading a trace is much harder if the inventory
+        # groups hooks by anything else.
+        assert rt.HOOKS[0] == "applypatch-msg"
+        assert rt.HOOKS[-1] == "pre-auto-gc"
+        assert rt.HOOKS.index("pre-commit") < rt.HOOKS.index("commit-msg")
+        assert rt.HOOKS.index("commit-msg") < rt.HOOKS.index("post-commit")
+
+
+class TestTracing:
+    """`HUSKY=2` traces husky's own sh layer; we continue it into Python."""
+
+    def test_silent_by_default(self, monkeypatch, capsys):
+        monkeypatch.delenv("HUSKY", raising=False)
+        monkeypatch.delenv(rt.TRACE_ENV, raising=False)
+        assert rt.tracing_enabled() is False
+        rt.trace("should not appear")
+        assert capsys.readouterr().err == ""
+
+    def test_husky_two_enables_it(self, monkeypatch, capsys):
+        monkeypatch.setenv("HUSKY", "2")
+        assert rt.tracing_enabled() is True
+        rt.trace("visible")
+        assert "+ visible" in capsys.readouterr().err
+
+    def test_trace_env_enables_it_without_husky(self, monkeypatch, capsys):
+        monkeypatch.delenv("HUSKY", raising=False)
+        monkeypatch.setenv(rt.TRACE_ENV, "1")
+        rt.trace("visible")
+        assert "+ visible" in capsys.readouterr().err
+
+    def test_husky_zero_does_not_trace(self, monkeypatch):
+        # 0 means "disabled", not "as loud as possible".
+        monkeypatch.setenv("HUSKY", "0")
+        assert rt.tracing_enabled() is False
+
+    def test_enter_reports_the_interpreter_and_arguments(self, monkeypatch, capsys):
+        """The first question about a misbehaving hook is which Python it got."""
+        monkeypatch.setenv(rt.TRACE_ENV, "1")
+        rt.enter("pre-commit", ["one", "two"])
+        err = capsys.readouterr().err
+        assert "pre-commit: interpreter=" in err
+        assert sys.executable in err
+        assert "['one', 'two']" in err
+
+    def test_enter_is_silent_when_not_tracing(self, monkeypatch, capsys):
+        monkeypatch.delenv("HUSKY", raising=False)
+        monkeypatch.delenv(rt.TRACE_ENV, raising=False)
+        rt.enter("pre-commit")
+        assert capsys.readouterr().err == ""
+
 
 class TestWiring:
-    @pytest.mark.parametrize("hook", ["pre-commit", "commit-msg", "pre-push"])
-    def test_shim_delegates_to_existing_script(self, hook):
+    @pytest.mark.parametrize("hook", list(rt.HOOKS))
+    def test_every_shim_delegates_to_an_existing_script(self, hook):
         shim = os.path.join(REPO_ROOT, ".husky", hook)
         assert os.path.isfile(shim), f"missing shim {shim}"
         script = os.path.join(REPO_ROOT, "scripts", "hooks", f"{hook.replace('-', '_')}.py")
         assert os.path.isfile(script), f"shim {hook} points at a missing script"
 
-    def test_doctor_passes(self):
+    def test_structural_checks_pass_in_any_checkout(self):
+        """The part of the doctor that must hold without a local install.
+
+        Everything environmental -- whether *this* machine has run
+        `npm install` and therefore set core.hooksPath, generated .husky/_, or
+        has Node at all -- is deliberately excluded. Otherwise this test
+        would fail on a fresh clone while telling us nothing about the
+        repository.
+        """
+        checks = [
+            verify._check_hooks_present(),
+            verify._check_shim_shape(),
+            ("unknown files", verify._check_unknown_hooks(), []),
+            verify._check_generated_dir(),
+            verify._check_git_dir_shadowing(),
+        ]
+        for name, failures, _warnings in checks:
+            assert failures == [], f"{name}: {failures}"
+
+    def test_doctor_passes_where_the_hooks_are_installed(self):
+        code, value = rt.git("config", "--get", "core.hooksPath")
+        if code != 0 or value != verify.EXPECTED_HOOKS_PATH:
+            pytest.skip("hooks are not installed in this checkout")
+        assert verify.main([]) == 0
+
+    def test_doctor_module_runs_as_a_program(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.hooks.verify"],
+            [sys.executable, "-m", "scripts.hooks.verify", "--list"],
             capture_output=True,
             text=True,
             cwd=REPO_ROOT,
             check=False,
         )
         assert result.returncode == 0, result.stderr
+        assert "14/14" in result.stderr
 
     def test_bootstrap_uses_module_invocation(self):
         """Hooks must be run as modules, not file paths.

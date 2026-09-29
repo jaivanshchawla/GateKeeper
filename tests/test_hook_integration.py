@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -20,18 +21,31 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scripts.hooks import _policy as policy
-from scripts.hooks import _runtime as rt
 from scripts.hooks import (
+    _checks,
+    _events,
     applypatch_msg,
+    post_applypatch,
     post_checkout,
     post_commit,
     post_merge,
     post_rewrite,
+    pre_applypatch,
+    pre_auto_gc,
     pre_merge_commit,
     pre_rebase,
     prepare_commit_msg,
     verify,
+)
+from scripts.hooks import _policy as policy
+from scripts.hooks import _runtime as rt
+
+# The generated dispatcher, which only exists after an install. Tests that
+# exercise husky's own `h` layer need it and skip without it.
+HUSKY_DISPATCHER = rt.REPO_ROOT / ".husky" / "_" / "h"
+needs_husky = pytest.mark.skipif(
+    not HUSKY_DISPATCHER.is_file(),
+    reason="hooks are not generated (.husky/_/h missing) - run `npm install`",
 )
 
 
@@ -315,6 +329,64 @@ class TestBootstrapShell:
         assert result.returncode != 0
         assert "no working Python 3" in result.stderr
 
+    def test_survives_an_errexit_set_u_shell(self):
+        """Upstream's `8_set_u.sh`, one layer stricter.
+
+        husky runs the shim with `sh -e`; `-u` is added on top by anyone who
+        sets it in a startup file. An unset variable read at the top level
+        would abort the shell before the hook ever starts.
+        """
+        result = self._sh("set -u; . .husky/lib/bootstrap.sh; echo survived")
+        assert result.returncode == 0, result.stderr
+        assert "survived" in result.stdout
+
+    def test_survives_set_u_all_the_way_into_a_hook(self):
+        result = self._sh(
+            "set -u; . .husky/lib/bootstrap.sh; gatekeeper_run_hook pre-auto-gc"
+        )
+        assert result.returncode == 0, result.stderr
+
+    @needs_husky
+    def test_xdg_startup_file_is_sourced_by_husky(self, tmp_path):
+        """The documented `init.sh` hook, through the real dispatcher.
+
+        Verified by side effect rather than by reading the shim: the file
+        writes a marker, so the assertion is that husky actually sourced it.
+        """
+        config = tmp_path / "config" / "husky"
+        config.mkdir(parents=True)
+        marker = tmp_path / "marker"
+        (config / "init.sh").write_text(
+            f'printf "sourced\\n" > "{marker.as_posix()}"\n', encoding="utf-8"
+        )
+        result = self._sh(
+            "sh .husky/_/pre-auto-gc",
+            env={"XDG_CONFIG_HOME": (tmp_path / "config").as_posix()},
+        )
+        assert result.returncode == 0, result.stderr
+        assert marker.read_text(encoding="utf-8").strip() == "sourced"
+
+    @needs_husky
+    def test_husky_zero_from_a_startup_file_disables_every_hook(self, tmp_path):
+        """Upstream's `9_husky_0.sh`: an init.sh can turn the hooks off.
+
+        The control run comes first, so a hook that exits 0 because it is
+        broken cannot be mistaken for one that was correctly disabled.
+        """
+        message = tmp_path / "msg"
+        message.write_text("not a conventional subject\n", encoding="utf-8")
+        call = f'sh .husky/_/commit-msg "{message.as_posix()}"'
+
+        assert self._sh(call).returncode != 0
+
+        config = tmp_path / "config" / "husky"
+        config.mkdir(parents=True)
+        (config / "init.sh").write_text("export HUSKY=0\n", encoding="utf-8")
+        disabled = self._sh(
+            call, env={"XDG_CONFIG_HOME": (tmp_path / "config").as_posix()}
+        )
+        assert disabled.returncode == 0, disabled.stderr
+
 
 class TestHookInventory:
     def test_every_hook_has_a_shim_and_a_module(self):
@@ -363,13 +435,358 @@ class TestHookInventory:
 
     def test_inventory_lists_every_hook(self):
         assert verify.main(["--list"]) == 0
-        assert len(rt.HOOKS) == 11
+        assert len(rt.HOOKS) == 14
 
     def test_every_shipped_hook_is_one_husky_dispatches(self):
         # husky only creates _/ shims for the hooks it knows; a hook outside
-        # that set would be a file that never runs.
-        husky_hooks = set(rt.HOOKS)
-        assert husky_hooks.issubset(set(rt.KNOWN_GIT_HOOKS))
+        # that set would be a file that never runs, and one it dispatches
+        # with nothing behind it is a silently ignored no-op.
+        assert set(rt.HOOKS) == set(rt.HUSKY_HOOKS)
+        assert set(rt.HOOKS).issubset(set(rt.KNOWN_GIT_HOOKS))
+
+    def test_generated_dispatchers_cover_every_hook(self):
+        """Every hook we ship has a real dispatcher in the generated dir."""
+        generated = rt.REPO_ROOT / ".husky" / "_"
+        if not generated.is_dir():
+            pytest.skip("hooks are not generated - run `npm install`")
+        for hook in rt.HOOKS:
+            assert (generated / hook).is_file(), f"no generated dispatcher for {hook}"
+
+
+class TestPreApplyPatch:
+    """`git am` runs no commit hooks, so it needs its own content gate."""
+
+    def test_blocks_on_conflict_markers(self, repo):
+        marked = repo / "notes.txt"
+        marked.write_text(
+            "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n", encoding="utf-8"
+        )
+        _run(repo, "add", "notes.txt")
+        assert _checks.conflict_markers() == ["notes.txt"]
+        assert pre_applypatch.main() == 1
+
+    def test_accepts_a_clean_staged_change(self, repo):
+        (repo / "clean.py").write_text("x = 1\n", encoding="utf-8")
+        _run(repo, "add", "clean.py")
+        assert pre_applypatch.main() == 0
+
+    def test_finds_the_same_files_pre_commit_would(self, repo):
+        (repo / "clean.py").write_text("x = 1\n", encoding="utf-8")
+        (repo / "notes.txt").write_text("plain\n", encoding="utf-8")
+        _run(repo, "add", "clean.py", "notes.txt")
+        assert _checks.staged_python_files() == ["clean.py"]
+
+    def test_skip_env_disables_the_hook(self, repo, monkeypatch):
+        monkeypatch.setenv(rt.SKIP_ENV, "pre-applypatch")
+        assert pre_applypatch.main() == 0
+
+
+class TestPostApplyPatch:
+    """`git am` never runs post-commit, so the patch path records its own."""
+
+    def test_records_the_patch_commit(self, repo):
+        sha = _commit(repo, "a.txt")
+        assert post_applypatch.main() == 0
+        events = _events.read_events()
+        assert events[-1]["event"] == "applypatch"
+        assert events[-1]["sha"] == sha
+        assert events[-1]["branch"] == "main"
+
+    def test_writes_into_the_commit_event_log(self, repo):
+        _commit(repo, "a.txt")
+        post_commit.main()
+        post_applypatch.main()
+        events = _events.read_events()
+        assert [event["event"] for event in events] == ["commit", "applypatch"]
+
+    def test_never_fails_without_a_commit(self, repo, monkeypatch):
+        monkeypatch.setattr(rt, "REPO_ROOT", repo / "does-not-exist")
+        assert post_applypatch.main() == 0
+
+
+class TestGateRunMarker:
+    """The marker that keeps background housekeeping away from a live gate."""
+
+    def test_lifecycle(self, repo):
+        assert rt.gate_run_active() is False
+        assert rt.begin_gate_run("pre-push") is True
+        assert rt.gate_run_active() is True
+        rt.end_gate_run()
+        assert rt.gate_run_active() is False
+
+    def test_marker_lives_inside_the_git_directory(self, repo):
+        rt.begin_gate_run("pre-push")
+        assert (repo / ".git" / rt.STATE_DIR / rt.GATE_RUN_FILE).is_file()
+        rt.end_gate_run()
+        assert not (repo / ".git" / rt.STATE_DIR / rt.GATE_RUN_FILE).exists()
+
+    def test_abandoned_marker_is_ignored(self, repo):
+        directory = repo / ".git" / rt.STATE_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / rt.GATE_RUN_FILE).write_text(
+            json.dumps({"label": "pre-push", "pid": 1, "started_at": 0}), encoding="utf-8"
+        )
+        assert rt.gate_run_active() is False
+
+    def test_unreadable_marker_is_ignored(self, repo):
+        directory = repo / ".git" / rt.STATE_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / rt.GATE_RUN_FILE).write_text("not json", encoding="utf-8")
+        assert rt.gate_run_active() is False
+
+    def test_is_a_no_op_outside_a_repository(self, repo, monkeypatch):
+        monkeypatch.setattr(rt, "REPO_ROOT", repo / "does-not-exist")
+        assert rt.begin_gate_run("pre-push") is False
+        assert rt.gate_run_active() is False
+        assert rt.end_gate_run() is None
+
+
+class TestPreAutoGc:
+    """A non-zero exit here is not an error: it postpones the collection."""
+
+    def test_allows_collection_when_idle(self, repo):
+        assert pre_auto_gc.main() == 0
+
+    def test_declines_while_a_gate_is_running(self, repo):
+        rt.begin_gate_run("pre-push")
+        assert pre_auto_gc.main() == 1
+
+    def test_allows_collection_after_the_gate_finishes(self, repo):
+        rt.begin_gate_run("pre-push")
+        rt.end_gate_run()
+        assert pre_auto_gc.main() == 0
+
+    def test_ignores_an_abandoned_marker(self, repo):
+        directory = repo / ".git" / rt.STATE_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / rt.GATE_RUN_FILE).write_text(
+            json.dumps({"label": "pre-push", "pid": 1, "started_at": 0}), encoding="utf-8"
+        )
+        assert pre_auto_gc.main() == 0
+
+    def test_skip_env_leaves_collection_alone(self, repo, monkeypatch):
+        rt.begin_gate_run("pre-push")
+        monkeypatch.setenv(rt.SKIP_ENV, "pre-auto-gc")
+        assert pre_auto_gc.main() == 0
+
+    def test_pre_push_clears_the_marker_it_sets(self, repo, monkeypatch):
+        """A blocked push must not leave the marker behind."""
+        from scripts.hooks import pre_push
+
+        monkeypatch.setattr(pre_push, "_gate", lambda _stdin: 1)
+        monkeypatch.setattr(sys, "stdin", type("S", (), {"isatty": lambda self: True})())
+        assert pre_push.main() == 1
+        assert rt.gate_run_active() is False
+
+
+class TestEventLog:
+    """One writer, one file, one format -- shared by every reporting hook."""
+
+    def test_post_merge_records_a_merge_event(self, repo):
+        base = _run(repo, "rev-parse", "HEAD").stdout.strip()
+        (repo / ".gatekeeper.yml").write_text("rules: {}\n", encoding="utf-8")
+        _run(repo, "add", ".gatekeeper.yml")
+        _run(repo, "commit", "-q", "-m", "chore: change gate config")
+        _run(repo, "update-ref", "ORIG_HEAD", base)
+
+        assert post_merge.main() == 0
+        event = _events.read_events()[-1]
+        assert event["event"] == "merge"
+        assert event["gate_files_changed"] == 1
+        assert "gate" not in event  # a merge is not a Gate 1 commit
+
+    def test_post_rewrite_stores_the_sha_mapping(self, repo):
+        head = _run(repo, "rev-parse", "HEAD").stdout.strip()
+        post_rewrite.report(f"{head} {head}\n", "amend")
+
+        event = _events.read_events()[-1]
+        assert event["event"] == "rewrite"
+        assert event["command"] == "amend"
+        assert event["rewrites"] == [{"old": head, "new": head}]
+        # A rewrite is branch-independent: it can be recorded mid-detach.
+        assert "branch" not in event
+
+    def test_parse_pairs_ignores_malformed_lines(self):
+        assert post_rewrite.parse_pairs("garbage\n\na b\n") == [("a", "b")]
+
+    def test_read_events_respects_the_limit(self, repo):
+        for name in ("a.txt", "b.txt", "c.txt"):
+            _commit(repo, name)
+            post_commit.main()
+        assert len(_events.read_events(2)) == 2
+        assert len(_events.read_events()) == 3
+
+    def test_a_torn_last_line_does_not_hide_the_records_before_it(self, repo):
+        _commit(repo, "a.txt")
+        post_commit.main()
+        with open(_events.events_path(), "a", encoding="utf-8") as handle:
+            handle.write('{"event": "commit"')  # a hook killed mid-write
+        assert len(_events.read_events()) == 1
+
+    def test_empty_log_is_not_an_error(self, repo):
+        assert _events.read_events() == []
+
+    def test_write_event_reports_failure_outside_a_repository(self, repo, monkeypatch):
+        monkeypatch.setattr(rt, "REPO_ROOT", repo / "does-not-exist")
+        assert _events.write_event("commit") is False
+        assert _events.record_commit("commit") is None
+
+
+class TestHookLatency:
+    """Upstream's `11_time.sh`: a slow hook gets disabled by its users."""
+
+    def test_reporting_hooks_stay_fast(self, repo, monkeypatch):
+        class _TtyStdin:
+            """post-rewrite reads stdin; under pytest it is not a tty."""
+
+            def isatty(self) -> bool:
+                return True
+
+            def read(self) -> str:
+                return ""
+
+        monkeypatch.setattr(sys, "stdin", _TtyStdin())
+        calls = {
+            "post-checkout": lambda: post_checkout.main(["a", "b", "1"]),
+            "post-commit": post_commit.main,
+            "post-merge": post_merge.main,
+            "post-rewrite": lambda: post_rewrite.main(["amend"]),
+            "pre-auto-gc": pre_auto_gc.main,
+        }
+        for name, call in calls.items():
+            started = time.monotonic()
+            assert call() == 0
+            elapsed = time.monotonic() - started
+            assert elapsed < 2.0, f"{name} took {elapsed:.2f}s"
+
+
+class TestDoctorEnvironment:
+    """The doctor's environment checks, which need a breakable repo."""
+
+    def test_flags_a_flag_shaped_hooks_path(self, repo):
+        """The exact damage `npx husky --version` does."""
+        _run(repo, "config", "core.hooksPath", "--version/_")
+        name, failures, _warnings = verify._check_hooks_path()
+        assert name == "core.hooksPath"
+        assert any("looks like a command-line flag" in problem for problem in failures)
+        assert any("npm run hooks:install" in problem for problem in failures)
+
+    def test_reports_a_missing_hooks_path(self, repo):
+        _run(repo, "config", "--unset", "core.hooksPath")
+        _name, failures, _warnings = verify._check_hooks_path()
+        assert any("not set" in problem for problem in failures)
+
+    def test_shadowed_hooks_reports_every_hook_not_just_pre_push(self, repo):
+        hooks = repo / ".git" / "hooks"
+        (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+        (hooks / "pre-push").write_text("#!/bin/sh\n", encoding="utf-8")
+        _name, failures, _warnings = verify._check_git_dir_shadowing()
+        assert any("pre-commit" in problem for problem in failures)
+        assert any("pre-push" in problem for problem in failures)
+        # The stock `.sample` files git writes are not shadowing hooks.
+        assert not any(".sample" in problem for problem in failures)
+
+    def test_quiet_when_nothing_shadows_the_hooks(self, repo):
+        _name, failures, _warnings = verify._check_git_dir_shadowing()
+        assert failures == []
+
+    def test_generated_dir_warns_rather_than_fails_when_absent(self, repo):
+        """A fresh Python-only clone must not be told the repo is broken."""
+        _name, failures, warnings = verify._check_generated_dir()
+        assert failures == []
+        assert any("npm install" in warning for warning in warnings)
+
+    def test_generated_dir_flags_a_missing_dispatcher(self, repo):
+        generated = repo / ".husky" / "_"
+        generated.mkdir(parents=True)
+        (generated / "h").write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+        _name, failures, _warnings = verify._check_generated_dir()
+        assert any("generated dispatcher" in problem for problem in failures)
+
+    def test_generated_dir_wants_the_ignore_file(self, repo):
+        generated = repo / ".husky" / "_"
+        generated.mkdir(parents=True)
+        (generated / "h").write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+        for hook in rt.HUSKY_HOOKS:
+            (generated / hook).write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+        _name, failures, warnings = verify._check_generated_dir()
+        assert failures == []
+        assert any("gitignore" in warning for warning in warnings)
+
+    def test_shim_shape_accepts_the_delegators_we_ship(self, repo):
+        husky = repo / ".husky"
+        husky.mkdir()
+        for hook in rt.HOOKS:
+            (husky / hook).write_text(
+                f'. "${{0%/*}}/lib/bootstrap.sh"\ngatekeeper_run_hook {hook}\n',
+                encoding="utf-8",
+            )
+        _name, failures, _warnings = verify._check_shim_shape()
+        assert failures == []
+
+    def test_shim_shape_rejects_logic_in_shell(self, repo):
+        """Logic in a shim is invisible to the hook test suite."""
+        husky = repo / ".husky"
+        husky.mkdir()
+        for hook in rt.HOOKS:
+            (husky / hook).write_text(
+                f'. "${{0%/*}}/lib/bootstrap.sh"\ngatekeeper_run_hook {hook}\n',
+                encoding="utf-8",
+            )
+        (husky / "pre-commit").write_text(
+            "#!/usr/bin/env sh\nruff check .\npytest -q\npython scripts/hooks/pre_commit.py\n",
+            encoding="utf-8",
+        )
+        _name, failures, _warnings = verify._check_shim_shape()
+        assert any("does not reference lib/bootstrap.sh" in problem for problem in failures)
+        assert any("is 4 lines of shell" in problem for problem in failures)
+
+    def test_hooks_present_reports_every_missing_shim(self, repo):
+        _name, failures, _warnings = verify._check_hooks_present()
+        assert len([p for p in failures if "missing hook shim" in p]) == len(rt.HOOKS)
+
+    def test_toolchain_rejects_a_git_too_old_for_hooks_path(self, monkeypatch):
+        monkeypatch.setattr(verify, "_git_version", lambda: (2, 8))
+        _name, failures, _warnings = verify._check_toolchain()
+        assert any("too old" in problem for problem in failures)
+
+    def test_toolchain_accepts_modern_git(self):
+        _name, failures, _warnings = verify._check_toolchain()
+        assert not any("git" in problem for problem in failures)
+
+    def test_missing_husky_is_a_warning_not_a_failure(self, repo):
+        """git is present in the temp repo; only the Node side is absent."""
+        _name, failures, warnings = verify._check_toolchain()
+        assert failures == []
+        assert any("husky" in warning for warning in warnings)
+
+    def test_strict_promotes_warnings_to_failures(self, monkeypatch):
+        code, value = rt.git("config", "--get", "core.hooksPath")
+        if code != 0 or value != verify.EXPECTED_HOOKS_PATH:
+            pytest.skip("hooks are not installed in this checkout")
+        monkeypatch.setattr(
+            verify,
+            "_check_toolchain",
+            lambda: ("toolchain", [], ["pretend node is missing"]),
+        )
+        assert verify.main([]) == 0
+        assert verify.main(["--strict"]) == 1
+
+    def test_environment_notes_name_a_deprecated_huskyrc(self, monkeypatch, tmp_path):
+        (tmp_path / ".huskyrc").write_text("export PATH=$PATH\n", encoding="utf-8")
+        monkeypatch.setenv("HOME", tmp_path.as_posix())
+        monkeypatch.setenv("USERPROFILE", tmp_path.as_posix())
+        monkeypatch.setenv("XDG_CONFIG_HOME", (tmp_path / "config").as_posix())
+        assert any("DEPRECATED" in note for note in verify._environment_notes())
+
+    def test_environment_notes_name_the_startup_file_in_use(self, monkeypatch, tmp_path):
+        config = tmp_path / "config" / "husky"
+        config.mkdir(parents=True)
+        (config / "init.sh").write_text("export A=1\n", encoding="utf-8")
+        monkeypatch.setenv("HOME", tmp_path.as_posix())
+        monkeypatch.setenv("USERPROFILE", tmp_path.as_posix())
+        monkeypatch.setenv("XDG_CONFIG_HOME", (tmp_path / "config").as_posix())
+        assert any("startup file in use" in note for note in verify._environment_notes())
 
 
 class TestShimChain:
