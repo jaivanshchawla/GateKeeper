@@ -15,6 +15,12 @@
 # Which interpreter runs the project's own tooling (venv-aware) is a separate
 # question, answered in one place: scripts/hooks/_runtime.py.
 
+# husky's dispatcher sets -x on HUSKY=2, but the hook it hands over to runs in
+# a *new* shell, so the trace stops at exactly the point where the interesting
+# work starts. Continuing it here, before anything else, keeps `HUSKY=2` a
+# single switch over the whole chain: dispatcher, shim, bootstrap, Python.
+[ "${HUSKY-}" = "2" ] && set -x
+
 # Locate the .husky/ directory.
 #
 # git invokes a hook by path, so `$0` is normally the hook file and its
@@ -59,8 +65,6 @@ gatekeeper_run_hook() {
 	# Hook names use dashes (pre-commit); the modules use underscores
 	# (scripts.hooks.pre_commit).
 	module=$(printf '%s' "$name" | tr '-' '_')
-
-	[ "${HUSKY-}" = "2" ] && set -x
 
 	# GATEKEEPER_PYTHON is tried first so the escape hatch actually works when
 	# nothing usable is on PATH. It was documented long before it was honoured.
