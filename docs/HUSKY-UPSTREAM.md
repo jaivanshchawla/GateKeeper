@@ -25,13 +25,24 @@ and we depend on that), **replaced** (we do it differently on purpose),
 | `README.md` | 1 | Link to the docs site | n/a |
 | `LICENSE` | 21 | MIT | n/a |
 
-Repo-only: `.editorconfig`, `.gitattributes`, `.gitignore`, `.npmignore`,
-`.shellcheckrc`, `test.sh` + `test/*.sh` (12 spec tests), `docs/**`
-(including `es/`, `ru/`, `zh/` translations), `.github/workflows/{node.js.yml,
-npm_publish.yml,deploy.yml}`.
+### 1.1 In the repository but not in the package
 
-`test.sh` runs the 12 scripts against a packed tarball in a throwaway git repo
-per test. That structure is what our `tests/test_hook_integration.py` copies.
+| Path | What it is | Decision |
+|------|------------|----------|
+| `test.sh`, `test/{functions.sh,1_default.sh … 12_deprecated.sh}` | The suite that verified this version: `test.sh` packs the module, then each script builds a throwaway repo and git config via `functions.sh` (`setup()`, `install()`, `expect*()`) | **Run** — vendored byte-for-byte under `tools/husky-conformance/upstream/` and executed by `tools/husky-conformance/run.sh` (§9) |
+| `.github/workflows/node.js.yml` | Upstream CI: node 18/20/22 × ubuntu/macOS/Windows, `npm ci --ignore-scripts`, `./test.sh` | **Mirrored** — our `hooks.yml` runs the same twelve tests on the same three operating systems |
+| `.github/workflows/npm_publish.yml` | Publishes on tag | **Skipped** — this package is private |
+| `.github/workflows/deploy.yml` | Builds and deploys the docs site | **Skipped** — the docs are read, not redeployed |
+| `docs/index.md`, `get-started.md`, `how-to.md`, `migrate-from-v4.md`, `troubleshoot.md` (+ `es/`, `ru/`, `zh/`) | The manual, in four languages | **Read** — every documented feature is mapped in §7; English only, untranslated here |
+| `.shellcheckrc` | shellcheck settings for their sh code | **Adopted in spirit** — our `sh` layer is shellchecked in CI with explicit flags rather than a repointed config |
+| `.editorconfig`, `.gitattributes`, `.gitignore`, `.npmignore` | Repo housekeeping | **Skipped** — this repo has its own conventions |
+| `.husky/pre-commit` (9 B) | husky's own hook in its own repo (`npm test`) | **Skipped** — `.husky/pre-commit` here is a real hook, not a wrapper around this repo's tests |
+| `.github/ISSUE_TEMPLATE/issue.md`, `.github/README.md`, `.github/FUNDING.yml` | GitHub metadata | **Skipped** — not applicable |
+| `LICENSE` | MIT, © typicode | **Vendored** with the suite as `tools/husky-conformance/upstream/LICENSE` |
+
+The upstream files are unmodified and are the only third-party source in this
+repository; their provenance, sizes and hashes are recorded in
+[`tools/husky-conformance/README.md`](../tools/husky-conformance/README.md).
 
 ---
 
@@ -53,6 +64,15 @@ so adding a hook is only ever "create `.husky/<name>` and a module". We ship all
 14, and `rt.HOOKS` and `rt.HUSKY_HOOKS` are now the same set — the doctor
 asserts that, because a shim husky never dispatches is a file that can never
 run.
+
+**Checked, not assumed.** `tests/test_husky_fidelity.py` generates a fresh
+`.husky/_/` with the installed husky in a temporary repository and asserts this
+checkout's directory is byte-identical, file by file. A `_/` from a different
+husky version, a shim someone edited, or a dispatcher that was never copied in
+would all pass every other test in this repository and fail that one. The
+doctor checks the same directory structurally (dispatcher looks like the real
+one, every hook delegates to it, `_/husky.sh` carries the deprecation guard),
+and `npm run hooks:repair` re-runs husky's installer for when a check fails.
 
 ---
 
@@ -237,25 +257,48 @@ neither stdin-reading hook ever calls it.
 
 ---
 
-## 9. Upstream test suite → our coverage
+## 9. Upstream's test suite — executed, not just mapped
 
-| Upstream test | What it proves | Ours |
-|---------------|----------------|------|
-| `1_default.sh` | install sets `.husky/_`; a failing hook blocks the commit | `TestPreMergeCommit`, `TestShimChain`, CI's real-shim step |
-| `2_in-sub-dir.sh` | custom hooks directory | skipped (§8) |
-| `3_from-sub-dir.sh` | install from a subdirectory | skipped (§8) |
-| `4_not-git-dir.sh` | install does not fail outside a repo | `install.mjs` never throws |
-| `5_git_command_not_found.sh` | the Node API degrades without git | n/a — our hooks run inside git |
-| `6_command_not_found.sh` | exit 127 is reported clearly | `TestBootstrapShell` — clearer, and earlier |
-| `7_node_modules_path.sh` | `node_modules/.bin` is on `PATH` | relied on, not asserted |
-| `8_set_u.sh` | a `set -u` `init.sh` does not break hooks | CI runs the bootstrap in a real shell |
-| `9_husky_0.sh` | `HUSKY=0` skips install; a `init.sh` can set it | `TestRuntimeResolution`, `install.mjs` skip test |
-| `10_init.sh` | `husky init` succeeds | `npm run hooks:init` |
-| `11_time.sh` | hooks are fast | advisory hooks are single-digit milliseconds |
-| `12_deprecated.sh` | the v8 shim header is tolerated | n/a — v9 format only |
+The twelve tests are vendored byte-for-byte under
+`tools/husky-conformance/upstream/` and run by
+`tools/husky-conformance/run.sh`, which packs the husky installed in
+`node_modules/` — the bytes a consumer would get — instead of this repository,
+because upstream's `test.sh` only works inside upstream's own checkout. See
+[`tools/husky-conformance/README.md`](../tools/husky-conformance/README.md) for
+provenance and hashes.
 
-Our hook suite is `tests/test_hooks.py` (unit) and
-`tests/test_hook_integration.py` (real git repos, real shell). 162 tests.
+```sh
+sh tools/husky-conformance/run.sh            # all twelve, about a minute
+sh tools/husky-conformance/run.sh --only 9   # one test, for debugging
+```
+
+Result: **12/12 pass** locally (`MINGW64_NT-10.0-26200`, node v24.12.0,
+husky 9.1.7), and CI runs the same twelve on ubuntu, macOS and Windows
+(`.github/workflows/hooks.yml`, job `hooks`). Nothing is listed as allowed to
+fail; the driver shouts if a test in that list starts passing, so it cannot
+quietly become a bin for real failures.
+
+| Upstream test | What it proves | Status here |
+|---------------|----------------|-------------|
+| `1_default.sh` | install sets `.husky/_`; a failing hook blocks the commit | **Run.** Ours too: `TestPreMergeCommit`, `TestShimChain`, CI's real-shim step |
+| `2_in-sub-dir.sh` | a custom hooks directory is honoured | **Run** (upstream's feature); this repo deliberately does not use one (§8) |
+| `3_from-sub-dir.sh` | install from a subdirectory via `prepare` | **Run** (upstream's feature); skipped here (§8) |
+| `4_not-git-dir.sh` | install does not fail outside a repo | **Run.** Ours too: `install.mjs` never throws |
+| `5_git_command_not_found.sh` | the Node API degrades without git | **Run.** n/a to our hooks — they run *inside* git |
+| `6_command_not_found.sh` | exit 127 is reported clearly | **Run.** Ours is earlier and more specific: `TestBootstrapShell` |
+| `7_node_modules_path.sh` | `node_modules/.bin` is on `PATH` inside a hook | **Run**, and asserted directly in `tests/test_husky_fidelity.py` |
+| `8_set_u.sh` | a `set -u` `init.sh` does not break dispatch | **Run.** CI also sources the bootstrap in a real shell |
+| `9_husky_0.sh` | `HUSKY=0` skips install, and `init.sh` can set it | **Run.** Ours too: `TestRuntimeResolution`, the `install.mjs` skip test |
+| `10_init.sh` | `husky init` completes | **Run.** Ours: `npm run hooks:init` |
+| `11_time.sh` | a hook adds no perceptible commit latency | **Run.** Our advisory hooks are single-digit milliseconds |
+| `12_deprecated.sh` | a v8-era shim header warns instead of failing | **Run.** Our own hooks are v9 format only |
+
+The hook layer's own tests are `tests/test_hooks.py` (58, unit),
+`tests/test_hook_integration.py` (114, real git repositories and the real
+shell) and `tests/test_husky_fidelity.py` (14, the generated `_/` and the
+dispatcher's contract) — 186, inside a project suite of 282. Together with
+upstream's twelve they cover both halves of one story: ours says what the hooks
+decide, upstream's says the chain that reaches them is the chain we assume.
 
 ---
 
@@ -269,3 +312,9 @@ places we knowingly diverge — diagnosing the interpreter before the hook runs,
 making the tty workaround opt-in, and implementing `uninstall` properly — are
 all cases where the upstream behaviour was right for a general-purpose tool and
 wrong for a hook that has to read git's stdin and fail visibly.
+
+We also do not take the integration on faith: the generated `_/` is compared
+byte-for-byte against a fresh install, and upstream's own twelve tests are run
+against the husky in `node_modules/` on three operating systems. "We depend on
+husky" is checked in both directions — that our copy is husky's, and that
+husky still behaves the way this integration reads it.

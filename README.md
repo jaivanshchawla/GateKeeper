@@ -111,11 +111,15 @@ Hooks are managed by [husky](https://github.com/typicode/husky) and installed by
 ```bash
 npm install            # installs husky and activates the hooks
 npm run hooks:verify   # confirm the wiring
+npm run hooks:repair   # re-run husky's installer if the wiring is broken
 npm run hooks:list     # show which hooks run at which stage
 ```
 
 See [docs/HUSKY.md](docs/HUSKY.md) for the hook architecture and
 [docs/HUSKY-UPSTREAM.md](docs/HUSKY-UPSTREAM.md) for how husky itself is used.
+`sh tools/husky-conformance/run.sh` runs husky's own test suite against the
+installed husky; the generated `.husky/_/` is verified byte-for-byte in the
+Python test suite.
 
 `.pre-commit-config.yaml` is kept as the declarative record of the hook policy
 and for environments where the Python `pre-commit` tool is the installer. Do not

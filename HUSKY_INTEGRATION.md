@@ -364,6 +364,32 @@ environment. The verification below runs the whole suite with all eight
 switches set to hostile values *and* a live gate marker, which is the check
 that was missing.
 
+**B19 — `verify --fix` repaired the wiring and then reported the damage it had
+just repaired.**
+`--fix` re-runs husky's installer, the one documented repair for a rewritten
+`core.hooksPath` or a `.husky/_/` that was never generated; it is deliberately
+never automatic. It ran at the top of `main()`, but the check list beneath it is
+built eagerly — each `_check_*()` runs and captures its result before anything
+is printed. So `--fix` printed the installer's output and then the *pre-repair*
+state: a repair that had worked, reported as two failures and exit 1.
+
+The way it was found is the useful part. Four independent breakages were planted
+at once (a truncated `_/h`, a flag-shaped `core.hooksPath`, and a deleted
+`_/husky.sh` and `_/pre-push`), so a repair that silently handled only the
+obvious one would have looked like success. It was the step after it — re-running
+the doctor and reading the report — that showed the report was lying.
+
+*Fixed:* repair runs before the list is built. A test stubs the other checks out
+and asserts that a repair correcting `core.hooksPath` exits 0, so the ordering
+cannot regress silently.
+
+**The generated directory stopped being a formality.** `_/` used to be checked
+for existence only. It is now checked for *shape*: `_/h` must look like husky's
+dispatcher, every generated hook must actually delegate to it, and a missing
+`_/husky.sh` — husky's v8 deprecation guard — is a warning. The failure this
+closes is the nastiest shape in the layer: a `_/` that exists, is executable,
+and does nothing, which git reports as success.
+
 ---
 
 ## 5. Verification
@@ -371,10 +397,12 @@ that was missing.
 | Check | Command | Result |
 |-------|---------|--------|
 | Hook unit tests | `python -m pytest tests/test_hooks.py -q` | **58 passed** |
-| Hook integration tests | `python -m pytest tests/test_hook_integration.py -q` | **104 passed** |
-| Both hook suites | `python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q` | **162 passed** |
-| Whole suite | `python -m pytest tests/ -q` | **258 passed** (2 pre-existing deprecation warnings) |
-| Lint on new code | `ruff check scripts/hooks/ tests/test_hooks.py` | clean |
+| Hook integration tests | `python -m pytest tests/test_hook_integration.py -q` | **114 passed** |
+| Generated-husky fidelity | `python -m pytest tests/test_husky_fidelity.py -q` | **14 passed** — `.husky/_/` byte-identical to a fresh install, dispatcher contract pinned |
+| Hook layer tests | `python -m pytest tests/test_hooks.py tests/test_hook_integration.py tests/test_husky_fidelity.py -q` | **186 passed** |
+| Upstream conformance suite | `sh tools/husky-conformance/run.sh --require` | **12/12 passed** — husky 9.1.7, MINGW64, node v24.12.0, ~59 s |
+| Whole suite | `python -m pytest tests/ -q` | **282 passed** (2 pre-existing pydantic deprecation warnings) |
+| Lint on new code | `ruff check scripts/hooks/ tests/test_hooks.py tests/test_hook_integration.py tests/test_husky_fidelity.py` | clean |
 | Bad message rejected | `git commit -m "totally bogus message"` | exit 1, hook blocked |
 | Good message accepted | `git commit -m "feat(hooks): ..."` | exit 0 |
 | Lint error blocked | committing a file with a ruff violation | exit 1, hook blocked (happened twice, both times on real findings) |
@@ -383,7 +411,8 @@ that was missing.
 | `init` with husky | scratch repo with `.husky/` | stood down, wrote no hook |
 | Gate 1 end-to-end | pre-push with simulated refs | scored 5 commits with bands and SHAP reasons |
 | Full pre-push | Gate 1 + ruff + pytest | passed; ruff clean on 7 changed files |
-| Doctor | `python -m scripts.hooks.verify` | all 8 checks pass, 14 hooks |
+| Doctor | `python -m scripts.hooks.verify` | all 7 checks pass, 0 warnings, 14 hooks |
+| Doctor repair (B19) | four planted breakages, then `npm run hooks:repair` | repaired; `verify` exits 0 afterwards |
 | Doctor, strict | `python -m scripts.hooks.verify --strict` | passes on an installed machine; the CI runner uses this |
 | Doctor inventory | `python -m scripts.hooks.verify --list` | `14/14 husky hooks`, with the block/report kind per hook |
 | Event log | `python -m scripts.hooks.verify --events` | the last 10 records, one per commit and per `git am` patch |
@@ -392,7 +421,7 @@ that was missing.
 | Gate-run marker | marker written, then read by `pre-auto-gc` | collection declined while fresh; allowed once stale |
 | Relocatable state | `GATEKEEPER_STATE_DIR=<tmp>` | the marker and the event log both follow it (B17) |
 | Hook suites under a live gate | suites re-run with a marker planted in `.git/gatekeeper/` | **168 passed** — the run that failed before the fix (B17) |
-| Whole suite, hostile environment | all 8 hook switches exported, **and** a live gate marker | **264 passed** — was 1 failed before B18 |
+| Hook layer, hostile environment | `GATEKEEPER_TRACE=1 HUSKY=2 GATEKEEPER_SKIP_HOOKS=all GATEKEEPER_HOOK_TESTS=0 GATE1_BLOCK=1 GATEKEEPER_ALLOW_PROTECTED=1`, **and** a live gate marker | **186 passed** — was 1 failed before B18 |
 | Real shim under a live gate | `sh .husky/_/pre-auto-gc` with the marker present | exit 1, "skipping background gc"; exit 0 without it |
 | Tracing | `HUSKY=2 sh .husky/_/pre-auto-gc` | sh `set -x` **and** `pre-auto-gc: interpreter=...` from Python |
 | Install / uninstall round trip | `node .husky/uninstall.mjs` then `install.mjs` | `core.hooksPath` unset and restored; `.husky/_` removed and regenerated |
@@ -428,6 +457,7 @@ See [`docs/HUSKY.md`](docs/HUSKY.md) for the full reference. Short version:
 npm install              # installs husky and activates the hooks
 npm run hooks:init       # install and verify the wiring
 npm run hooks:verify     # the doctor
+npm run hooks:repair     # re-run husky's installer when the doctor fails
 npm run hooks:list       # print the hook inventory
 npm run hooks:uninstall  # unset core.hooksPath and remove .husky/_
 ```
@@ -442,13 +472,15 @@ the whole chain, including the interpreter each hook resolved to.
 
 CI (`.github/workflows/hooks.yml`) is now three jobs. `hooks` installs husky on
 ubuntu, macOS and Windows across Python 3.11 and 3.12, runs the doctor with
-`--strict`, asserts the `14/14` inventory, runs both hook suites, **re-runs them
-against a live gate marker and every hook switch set to a hostile value (B17,
-B18)**, exercises the real `.husky/_` shims through the shell git uses, traces
-one hook end to end, reproduces the flag-shaped `core.hooksPath`, and shellchecks
-*every* shim — the list comes from `rt.HOOKS`, so a new hook cannot skip the
-check. `installer` walks install → uninstall → reinstall on Node 18, 20 and 22,
-plus a `NODE_ENV=production` install. `suite` runs the project's own test suite.
+`--strict`, asserts the `14/14` inventory, runs the hook layer's 186 tests,
+**re-runs them against a live gate marker and every hook switch set to a
+hostile value (B17, B18)**, **runs upstream husky's own twelve-test conformance
+suite on all three operating systems** (12/12 locally on Git Bash), exercises
+the real `.husky/_` shims through the shell git uses, traces one hook end to
+end, reproduces the flag-shaped `core.hooksPath`, and shellchecks *every* shim —
+the list comes from `rt.HOOKS`, so a new hook cannot skip the check.
+`installer` walks install → uninstall → reinstall on Node 18, 20 and 22, plus a
+`NODE_ENV=production` install. `suite` runs the project's own test suite.
 
 ---
 
@@ -470,6 +502,11 @@ Carried forward, **not** fixed on this branch:
   any edit to a file with old debt now surfaces that whole file's errors. That is
   arguably correct, but it means paying down debt is now on the path of any
   change to those files.
+- **Upstream's conformance suite runs in CI and on demand, not inside `pytest`.**
+  It needs node and npm, and each of its twelve tests does a real `npm install`
+  in a throwaway repository: about a minute, which would roughly double the
+  pre-push gate. The part that does not need node — the generated-`_/` fidelity
+  module — *is* in the suite, and skips cleanly where husky is not installed.
 - **`.pre-commit-config.yaml` is still not installed anywhere.** It is kept as
   the declarative policy record, but nothing verifies it still matches what the
   husky hooks actually enforce. Two descriptions of one policy can drift.
