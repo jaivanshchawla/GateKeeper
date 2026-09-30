@@ -14,6 +14,11 @@
 # differences between them. That job runs the shell-level specs by way of the
 # test suite: an init.sh that is really sourced, one that turns the hooks off
 # with HUSKY=0, and a `set -u` shell are all asserted there on all three OSes.
+#
+# It also runs husky's own conformance suite (vendored verbatim under
+# tools/husky-conformance/upstream/, driven by our run.sh) on all three OSes.
+# Everything our own tests exercise starts *after* the husky chain, so upstream's
+# suite is what proves the chain itself behaves as assumed here.
 
 name: Hooks
 
@@ -56,6 +61,21 @@ jobs:
           HUSKY: "1"
         run: node .husky/install.mjs
 
+      # Upstream husky's twelve tests, run unmodified against the husky this
+      # checkout installed. They cover what our own suite cannot see: whether
+      # `core.hooksPath` is written correctly, whether HUSKY=0 is honoured,
+      # whether node_modules/.bin reaches a hook, and the v8-compatibility
+      # guard. --require turns a missing node/npm/husky into a failure instead
+      # of a skip, so a green run here is never green by absence.
+      #
+      # shell: bash is explicit because `run.sh` is POSIX sh and upstream's
+      # tests are shell scripts; the default PowerShell would not execute them.
+      # One Python version is enough -- the suite is about Node and git.
+      - name: Run husky's upstream conformance suite
+        if: matrix.python == '3.11'
+        shell: bash
+        run: sh tools/husky-conformance/run.sh --require
+
       # --strict: this job installed everything, so a "missing from this
       # machine" warning here really is a failure.
       - name: Verify the hook wiring
@@ -70,7 +90,7 @@ jobs:
         run: python -m pip install --upgrade pip pytest
 
       - name: Run the hook tests
-        run: python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q
+        run: python -m pytest tests/test_hooks.py tests/test_hook_integration.py tests/test_husky_fidelity.py -q
 
       # The pre-push hook writes the gate-run marker and then runs this very
       # suite, so `pre-auto-gc` declines for the duration. A test that reads
@@ -88,7 +108,8 @@ jobs:
           printf '{"label":"pre-push","pid":1,"started_at":%s}\n' "$(date +%s)" > .git/gatekeeper/gate_run.json
           env GATEKEEPER_TRACE=1 HUSKY=2 GATEKEEPER_SKIP_HOOKS=all \
             GATEKEEPER_HOOK_TESTS=0 GATE1_BLOCK=1 GATEKEEPER_ALLOW_PROTECTED=1 \
-            python -m pytest tests/test_hooks.py tests/test_hook_integration.py -q
+            python -m pytest tests/test_hooks.py tests/test_hook_integration.py \
+              tests/test_husky_fidelity.py -q
           rm -f .git/gatekeeper/gate_run.json
 
       # Exercises the real .husky/_ -> .husky/<hook> -> module chain rather
@@ -154,7 +175,8 @@ jobs:
       - name: Shellcheck every hook shell script
         if: runner.os == 'Linux'
         run: |
-          shellcheck --shell=sh --severity=error .husky/lib/bootstrap.sh .husky/lib/common.sh
+          shellcheck --shell=sh --severity=error \
+            .husky/lib/bootstrap.sh .husky/lib/common.sh tools/husky-conformance/run.sh
           python -c "from scripts.hooks import _runtime as rt; print(' '.join('.husky/' + h for h in rt.HOOKS))" > shims.txt
           # shellcheck disable=SC2046
           shellcheck --shell=sh --severity=error $(cat shims.txt)
