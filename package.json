@@ -12,6 +12,7 @@
     "prepare": "node .husky/install.mjs",
     "hooks:init": "node .husky/install.mjs && python -m scripts.hooks.verify",
     "hooks:install": "node .husky/install.mjs",
+    "hooks:repair": "python -m scripts.hooks.verify --fix",
     "hooks:uninstall": "node .husky/uninstall.mjs",
     "hooks:verify": "python -m scripts.hooks.verify",
     "hooks:list": "python -m scripts.hooks.verify --list",

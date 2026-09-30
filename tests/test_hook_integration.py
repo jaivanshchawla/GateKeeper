@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -777,22 +778,87 @@ class TestDoctorEnvironment:
         assert failures == []
         assert any("npm install" in warning for warning in warnings)
 
-    def test_generated_dir_flags_a_missing_dispatcher(self, repo):
+    @staticmethod
+    def _write_generated_layout(repo, *, guard: bool = True) -> Path:
+        """Write a `.husky/_/` that looks like the one husky installs.
+
+        The generated files are content-checked now, so a placeholder
+        `#!/usr/bin/env sh` is exactly what the check is meant to reject.
+        """
         generated = repo / ".husky" / "_"
-        generated.mkdir(parents=True)
+        generated.mkdir(parents=True, exist_ok=True)
+        (generated / "h").write_text(
+            "#!/usr/bin/env sh\n# HUSKY\nbasename\n", encoding="utf-8"
+        )
+        for hook in rt.HUSKY_HOOKS:
+            (generated / hook).write_text(
+                f"#!/usr/bin/env sh\n{verify.GENERATED_SHIM}\n", encoding="utf-8"
+            )
+        if guard:
+            (generated / "husky.sh").write_text("# DEPRECATED\n", encoding="utf-8")
+        return generated
+
+    def test_generated_dir_flags_a_missing_dispatcher(self, repo):
+        (repo / ".husky" / "_").mkdir(parents=True)
+        _name, failures, _warnings = verify._check_generated_dir()
+        assert any("missing dispatcher: .husky/_/h" in problem for problem in failures)
+        assert any("missing generated dispatcher" in problem for problem in failures)
+
+    def test_generated_dir_rejects_a_home_made_dispatcher(self, repo):
+        """A file *named* `h` that is not husky's `h` swallows every hook."""
+        generated = self._write_generated_layout(repo)
         (generated / "h").write_text("#!/usr/bin/env sh\n", encoding="utf-8")
         _name, failures, _warnings = verify._check_generated_dir()
-        assert any("generated dispatcher" in problem for problem in failures)
+        assert any(
+            "does not look like husky's dispatcher" in problem for problem in failures
+        )
+
+    def test_generated_dir_flags_a_hook_that_stopped_delegating(self, repo):
+        """A generated shim that no longer sources `h` is a silent no-op."""
+        generated = self._write_generated_layout(repo)
+        (generated / "pre-commit").write_text("#!/usr/bin/env sh\ntrue\n", encoding="utf-8")
+        _name, failures, _warnings = verify._check_generated_dir()
+        assert any("does not delegate to _/h" in problem for problem in failures)
 
     def test_generated_dir_wants_the_ignore_file(self, repo):
-        generated = repo / ".husky" / "_"
-        generated.mkdir(parents=True)
-        (generated / "h").write_text("#!/usr/bin/env sh\n", encoding="utf-8")
-        for hook in rt.HUSKY_HOOKS:
-            (generated / hook).write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+        self._write_generated_layout(repo)
         _name, failures, warnings = verify._check_generated_dir()
         assert failures == []
         assert any("gitignore" in warning for warning in warnings)
+
+    def test_generated_dir_warns_when_the_v8_guard_is_gone(self, repo):
+        """Without it, a v8-era hook header silently does nothing."""
+        self._write_generated_layout(repo, guard=False)
+        _name, failures, warnings = verify._check_generated_dir()
+        assert failures == []
+        assert any(
+            "husky.sh" in warning and "deprecated" in warning for warning in warnings
+        )
+
+    def test_fix_repairs_before_the_checks_are_evaluated(self, repo, monkeypatch):
+        """`--fix` must not report the state it has just repaired (B19).
+
+        Checks are evaluated eagerly when the list is built, so repairing
+        afterwards produced a green repair that still exited 1. Every other
+        check is stubbed out to keep this test about ordering alone.
+        """
+        _run(repo, "config", "core.hooksPath", "stale/_")
+        for name in (
+            "_check_hooks_present",
+            "_check_shim_shape",
+            "_check_generated_dir",
+            "_check_git_dir_shadowing",
+            "_check_toolchain",
+        ):
+            monkeypatch.setattr(verify, name, lambda: ("stub", [], []))
+        monkeypatch.setattr(verify, "_check_unknown_hooks", list)
+
+        def repair() -> int:
+            _run(repo, "config", "core.hooksPath", verify.EXPECTED_HOOKS_PATH)
+            return 0
+
+        monkeypatch.setattr(verify, "_repair", repair)
+        assert verify.main(["--fix"]) == 0
 
     def test_shim_shape_accepts_the_delegators_we_ship(self, repo):
         husky = repo / ".husky"

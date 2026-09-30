@@ -25,7 +25,9 @@ Two severities, because they fail for different reasons:
   should not be told the repository is broken. ``--strict`` promotes them,
   which is what CI uses after installing everything.
 
-Also: ``--list`` prints the hook inventory, ``--events`` the event log.
+Also: ``--list`` prints the hook inventory, ``--events`` the event log, and
+``--fix`` re-runs husky's installer before checking (the documented recovery
+for a `core.hooksPath` that a stray `npx husky <argument>` rewrote).
 """
 
 from __future__ import annotations
@@ -49,6 +51,11 @@ MINIMUM_GIT = (2, 9)
 # sign someone wrote the logic in shell, where the tests cannot see it.
 MAX_SHIM_LINES = 3
 SHIM_MARKERS = ("lib/bootstrap.sh", "gatekeeper_run_hook")
+
+# What husky's installer writes into every `.husky/_/<hook>`: a one-line
+# delegation to the shared dispatcher next to it. Checked as a substring
+# rather than a whole file, so a version that adds a comment still passes.
+GENERATED_SHIM = '. "$(dirname "$0")/h"'
 
 # A doctor "check" is (name, failures, warnings).
 Check = tuple[str, list[str], list[str]]
@@ -191,11 +198,45 @@ def _check_generated_dir() -> Check:
     failures: list[str] = []
     warnings: list[str] = []
 
-    if not (husky_dir / "h").is_file():
+    # `h` is husky's own dispatcher, copied in by its installer. A hand-rolled
+    # or half-written one is worse than an absent one: git finds it, runs it,
+    # and nothing ever reaches the hook -- with no error from git.
+    dispatcher = husky_dir / "h"
+    if not dispatcher.is_file():
         failures.append("missing dispatcher: .husky/_/h")
+    else:
+        text = dispatcher.read_text(encoding="utf-8", errors="replace")
+        if "HUSKY" not in text or "basename" not in text:
+            failures.append(
+                ".husky/_/h does not look like husky's dispatcher - it is the "
+                "file every hook is routed through; re-run "
+                "`npm run hooks:install`"
+            )
+
     for hook in rt.HUSKY_HOOKS:
-        if not (husky_dir / hook).is_file():
+        generated = husky_dir / hook
+        if not generated.is_file():
             failures.append(f"missing generated dispatcher: .husky/_/{hook}")
+            continue
+        # Generated, not authored: if this stops delegating to `h`, the hook
+        # silently becomes a no-op that git still reports as success.
+        if GENERATED_SHIM not in generated.read_text(encoding="utf-8", errors="replace"):
+            failures.append(
+                f".husky/_/{hook} does not delegate to _/h - re-run "
+                "`npm run hooks:install`"
+            )
+
+    # husky writes this as a migration trap: it replaces the v8 `husky.sh`, so
+    # a leftover `#!/usr/bin/env sh` + `. ".../_/husky.sh"` header announces
+    # itself instead of silently doing nothing.
+    guard = husky_dir / "husky.sh"
+    if not guard.is_file():
+        warnings.append(
+            ".husky/_/husky.sh is missing: a v8-era hook header would not warn "
+            "that it is deprecated (re-run `npm run hooks:install`)"
+        )
+    elif "DEPRECATED" not in guard.read_text(encoding="utf-8", errors="replace"):
+        warnings.append(".husky/_/husky.sh is not husky's deprecation guard")
 
     ignore = husky_dir / ".gitignore"
     if not ignore.is_file() or ignore.read_text(encoding="utf-8").strip() != "*":
@@ -340,6 +381,44 @@ def _init_sh_path() -> Path:
     return Path(base) / "husky" / "init.sh"
 
 
+# -- repair -----------------------------------------------------------
+
+
+def _repair() -> int:
+    """Re-run husky's installer, and report what it said.
+
+    Most wiring breakage is one of two things: `.husky/_/` was never generated
+    on this machine (a fresh clone, or an install with `--ignore-scripts`), or
+    `core.hooksPath` was rewritten by a stray `npx husky <argument>`. Husky
+    documents one command for both, so `--fix` runs that command rather than
+    reimplementing generation here -- exactly one thing knows how to write
+    `_/`, and it is husky.
+
+    It is never run automatically. Rewriting `core.hooksPath` is the kind of
+    thing a check should report and a human should ask for.
+    """
+    installer = rt.REPO_ROOT / ".husky" / "install.mjs"
+    node = shutil.which("node")
+    if node is None or not installer.is_file():
+        rt.log("  note  cannot repair: needs node and .husky/install.mjs")
+        return 1
+
+    # HUSKY=1 because install.mjs deliberately skips itself on CI, where a
+    # repair is exactly what someone is asking for.
+    result = subprocess.run(
+        [node, str(installer)],
+        cwd=str(rt.REPO_ROOT),
+        env=dict(os.environ, HUSKY="1"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for line in (result.stdout + result.stderr).splitlines():
+        if line.strip():
+            rt.log(f"  note  {line}")
+    return result.returncode
+
+
 # -- reporting ---------------------------------------------------------
 
 
@@ -382,6 +461,14 @@ def main(argv: list[str]) -> int:
     if "--events" in argv:
         _print_events(_events.DEFAULT_TAIL)
         return 0
+
+    # Repair before checking, not after. The checks below are evaluated
+    # eagerly, so building the list first and repairing second reports the
+    # state the repair has just fixed -- a green repair that still exits 1.
+    if "--fix" in argv:
+        rt.log("")
+        rt.log(f"{rt.BANNER} repairing the husky wiring")
+        _repair()
 
     checks: list[Check] = [
         _check_hooks_path(),
