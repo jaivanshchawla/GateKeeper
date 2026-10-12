@@ -163,6 +163,31 @@ Both `score_pr.py` and the smoke test conftest check for `DASHBOARD_URL`. If uns
 DASHBOARD_URL=https://your-deployed-webhook-url
 ```
 
+## CI/CD
+
+Five workflows, and one command that runs what they run:
+
+```bash
+python -m scripts.ci.verify_all          # the whole local matrix
+python -m scripts.ci.verify_all --list   # what would run, and why
+python -m scripts.ci.verify_all --docker # + the Gate 3 rehearsal (needs Docker)
+```
+
+| Workflow | Trigger | Covers |
+|----------|---------|--------|
+| `hooks.yml` | every push / PR | husky's wiring on ubuntu, macOS and Windows; install/uninstall lifecycle on node 18/20/22; the project suite; the shared verification matrix |
+| `gate3_post_deploy.yml` | push to `main` | docker build, health, and the smoke tests |
+| `gate2_pr_risk.yml` | pull requests | commit risk scoring and the PR comment |
+| `keep_warm.yml` | cron | keeps the deployed API warm |
+| `retrain_trigger.yml` | manual | the retraining pipeline |
+
+Every job uploads its output as an artifact when it fails, and
+`tests/test_ci_workflows.py` asserts the workflows themselves — that the
+`hooks` job installs what its tests import, that Gate 3 builds the dashboard
+before building the images, and that the local matrix and the CI matrix stay the
+same list. See [docs/CI.md](docs/CI.md) for the full map, including the three
+failures it was written about.
+
 ## View MLflow UI
 
 ```bash
@@ -221,9 +246,16 @@ gatekeeper/
 ├── tests/                      # Unit tests
 ├── models/
 │   └── gatekeeper_risk_model.skops  # Standalone model (committed)
+├── scripts/
+│   ├── hooks/                  # the installed hook implementations (stdlib only)
+│   └── ci/verify_all.py        # the verification matrix local runs and CI both use
+├── .husky/                     # husky's committed layer (lib/, install.mjs, the hooks it calls)
 ├── .github/workflows/
+│   ├── hooks.yml               # the husky wiring, installer lifecycle, suite and matrix
 │   ├── gate2_pr_risk.yml       # Gate 2: PR risk scoring
 │   └── gate3_post_deploy.yml   # Gate 3: Post-deploy smoke tests
 ├── .pre-commit-config.yaml     # Pre-push hooks
+├── docs/CI.md                  # CI inventory, the fixed failures, the local matrix
+├── docs/MERGE-HUSKY.md         # record of merging `husky` into `main`
 └── data/                       # Training data (gitignored, DVC-tracked)
 ```

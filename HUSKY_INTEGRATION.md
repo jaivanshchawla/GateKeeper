@@ -470,7 +470,7 @@ Bypass hatches: `GATEKEEPER_SKIP_HOOKS=<hook|all>`,
 Debug hatches: `HUSKY=2` (or `GATEKEEPER_TRACE=1` when husky is bypassed) traces
 the whole chain, including the interpreter each hook resolved to.
 
-CI (`.github/workflows/hooks.yml`) is now three jobs. `hooks` installs husky on
+CI (`.github/workflows/hooks.yml`) is now four jobs. `hooks` installs husky on
 ubuntu, macOS and Windows across Python 3.11 and 3.12, runs the doctor with
 `--strict`, asserts the `14/14` inventory, runs the hook layer's 186 tests,
 **re-runs them against a live gate marker and every hook switch set to a
@@ -481,6 +481,9 @@ end, reproduces the flag-shaped `core.hooksPath`, and shellchecks *every* shim �
 the list comes from `rt.HOOKS`, so a new hook cannot skip the check.
 `installer` walks install → uninstall → reinstall on Node 18, 20 and 22, plus a
 `NODE_ENV=production` install. `suite` runs the project's own test suite.
+`verification` runs `python -m scripts.ci.verify_all --profile ci` on all three
+operating systems — the same matrix a developer runs locally, which is section 8
+together with the failures that made it necessary.
 
 ---
 
@@ -538,4 +541,58 @@ Carried forward, **not** fixed on this branch:
   index touch. husky's 14 are the ones that apply to a *client* repository, and
   now all 14 are ours. `KNOWN_GIT_HOOKS` lists the full 28 so the doctor can
   still tell a real hook name from a typo.
-- **Not merged into `main`**, as requested.
+- ~~**Not merged into `main`**, as requested.~~ Superseded by section 8: the
+  merge was requested and done as a fast-forward, with `copy-main-before-husky`
+  kept as the pre-merge state. See [docs/MERGE-HUSKY.md](docs/MERGE-HUSKY.md).
+
+---
+
+## 8. Merging `husky` into `main`, and making CI green
+
+Two of the workflows this branch adds or depends on had **never passed**. The
+merge was therefore done in the order that keeps `main` green: back it up, fix
+and prove the red workflows on `husky`, then fast-forward.
+
+### 8.1 The backup, and why the merge is a fast-forward
+
+| Ref | Before | After |
+|-----|--------|-------|
+| `main` | `c3a8264` | the tip of `husky` |
+| `origin/main` | `c3a8264` | the tip of `husky` |
+| `copy-main-before-husky` | — | `c3a8264`, the pre-merge `main` |
+| `husky` | `5e287f4` + the fixes below | its own tip |
+
+`git rev-list --left-right --count main...husky` was `0 57`, so `main` is a
+strict ancestor of `husky` and the merge is a fast-forward: all 57 husky commits
+land on `main`'s graph as themselves, no merge commit is created, and no hook
+override is needed (`scripts/hooks/pre_merge_commit.py` refuses merge *commits*
+into a protected branch; a fast-forward never creates one). The old `main`
+remains reachable as `copy-main-before-husky`.
+
+Rollback, if it is ever wanted:
+
+```bash
+git checkout main && git reset --hard copy-main-before-husky   # local only
+git push --force-with-lease origin main                        # only with intent
+```
+
+### 8.2 What was broken, and what proves it is fixed
+
+| Failure | Root cause | Fix | Proof |
+|---------|-----------|-----|-------|
+| `hooks` job, all four legs | the job installed `pytest` but not PyYAML, and two tests read a configured `.gatekeeper.yml` | install `pyyaml`, assert `import yaml` in its own step, and give those tests a `requires_yaml` skip | with PyYAML hidden from the project's modules: **4 passed, 3 skipped, exit 0** (was 2 failures) |
+| `suite` job | four tests read `data/commit_features.csv` and `repos/`, neither of which is in a fresh clone | `needs_data` / `needs_repos` markers, turned into skips by `tests/conftest.py` | in a fresh clone: **276 passed, 40 skipped, 0 errors** (was an error at ~12 s) |
+| Gate 3 (95 consecutive red runs, last on `main` `c3a8264`) | `api/Dockerfile` COPYs `dashboard/dist/`, which is gitignored and therefore absent from a clean checkout | the workflow builds the dashboard first, **and** `dashboard/dist/.gitkeep` is tracked | pending a run on `main`; see [docs/CI.md](docs/CI.md) §2.3 |
+
+### 8.3 What now keeps them fixed
+
+* `tests/test_ci_workflows.py` (33 tests) asserts the workflows themselves:
+the dependency list, the skip report, the dashboard-before-images ordering, the
+`.dockerignore`, the tracked place-holder, the failure-artifact uploads, and that
+every step in the local matrix names a CI step that still exists.
+* `scripts/ci/verify_all.py` is the matrix, once: local runs and the
+`verification` CI job call the same script, so the two cannot drift.
+* Every failing job now uploads its output (`tee` + `pipefail` +
+`upload-artifact` on `if: failure()`), because a red run whose log needs a
+signed-in browser is a red run nobody can fix.
+* [docs/CI.md](docs/CI.md) is the map of all of it.
