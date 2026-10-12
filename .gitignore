@@ -24,6 +24,15 @@ __pycache__/
 dist/
 build/
 
+# The dashboard's build output stays ignored, but the directory itself has to
+# exist: api/Dockerfile does `COPY dashboard/dist/ ./dashboard/dist/`, and a
+# docker build from a fresh clone failed on it for 95 Gate 3 runs. Only the
+# place-holder is tracked, so a real `npm run build` output is still never
+# committed.
+!dashboard/dist/
+dashboard/dist/*
+!dashboard/dist/.gitkeep
+
 # Virtual environment
 .env
 .venv/
@@ -46,5 +55,15 @@ repos/
 
 # MLflow database backups
 mlflow.db.backup-*
+
+# Diagnostics the workflows upload when they fail, and verify_all writes always.
+# They are deliberately not committed: they describe one run on one machine.
+verify_all.log
+suite.log
+hook-tests.log
+smoke-tests.log
+compose-build.log
+compose-logs.log
+trace.log
 # Node (dashboard)
 node_modules/

@@ -86,11 +86,32 @@ jobs:
           python -m scripts.hooks.verify --list
           python -m scripts.hooks.verify --list 2>&1 | grep -q "14/14 husky hooks"
 
+      # PyYAML is *not* a dependency of the hook layer: .gatekeeper.yml is read
+      # best-effort and the built-in defaults take over without it. It is a
+      # dependency of these tests, though -- two of them assert a configured
+      # protected-branches list, which cannot be read without the library. It
+      # was missing here, so they failed on all four matrix legs while passing
+      # on every machine that happened to have PyYAML: the exact shape of a
+      # green laptop and a red CI.
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest pyyaml
 
+      # The step above is load-bearing, so its absence must be loud. Without
+      # this, deleting `pyyaml` would turn the configured-list tests into
+      # skips and the job would stay green while testing less.
+      - name: The policy config is readable in this job
+        run: python -c "import yaml; print('PyYAML', yaml.__version__)"
+
+      # tee so a failure can be read from the run's artifacts: job logs are
+      # otherwise only visible to someone signed in to GitHub, which is why
+      # these three red runs stayed unexplained. pipefail keeps pytest's exit
+      # status -- without it the pipe would report tee's success.
       - name: Run the hook tests
-        run: python -m pytest tests/test_hooks.py tests/test_hook_integration.py tests/test_husky_fidelity.py -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_hooks.py tests/test_hook_integration.py \
+            tests/test_husky_fidelity.py -q -rs 2>&1 | tee hook-tests.log
 
       # The pre-push hook writes the gate-run marker and then runs this very
       # suite, so `pre-auto-gc` declines for the duration. A test that reads
@@ -181,6 +202,20 @@ jobs:
           # shellcheck disable=SC2046
           shellcheck --shell=sh --severity=error $(cat shims.txt)
 
+      # Whatever the failure was, this job is the only place its output exists.
+      # The logs are a few hundred kilobytes at most; a run nobody can read is
+      # a run nobody can fix.
+      - name: Upload the hook job's diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hooks-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
+          path: |
+            hook-tests.log
+            trace.log
+          if-no-files-found: ignore
+          retention-days: 14
+
   installer:
     name: installer (node ${{ matrix.node }})
     runs-on: ubuntu-latest
@@ -207,30 +242,49 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install, uninstall and reinstall
+        shell: bash
         env:
           HUSKY: "1"
         run: |
-          set -e
-          node .husky/install.mjs
-          test "$(git config --get core.hooksPath)" = ".husky/_"
-          test -f .husky/_/h
+          set -e -o pipefail
+          {
+            node .husky/install.mjs
+            test "$(git config --get core.hooksPath)" = ".husky/_"
+            test -f .husky/_/h
 
-          # husky v9 removed `husky uninstall`. Unsetting the key alone would
-          # leave the generated shims for the next install to inherit.
-          node .husky/uninstall.mjs
-          test -z "$(git config --get core.hooksPath || true)"
-          test ! -d .husky/_
+            # husky v9 removed `husky uninstall`. Unsetting the key alone would
+            # leave the generated shims for the next install to inherit.
+            node .husky/uninstall.mjs
+            test -z "$(git config --get core.hooksPath || true)"
+            test ! -d .husky/_
 
-          node .husky/install.mjs
-          test "$(git config --get core.hooksPath)" = ".husky/_"
-          python -m scripts.hooks.verify --strict
+            node .husky/install.mjs
+            test "$(git config --get core.hooksPath)" = ".husky/_"
+            python -m scripts.hooks.verify --strict
+          } 2>&1 | tee installer.log
 
       - name: A production install must not fail for want of a devDependency
+        shell: bash
         env:
           NODE_ENV: production
         run: |
-          node .husky/install.mjs
-          test "$(git config --get core.hooksPath)" = ".husky/_"
+          set -e -o pipefail
+          {
+            node .husky/install.mjs
+            test "$(git config --get core.hooksPath)" = ".husky/_"
+          } 2>&1 | tee -a installer.log
+
+      # The same reasoning as the `hooks` job: a red install/uninstall
+      # lifecycle is only diagnosable from this job's output, and the log is
+      # behind a sign-in otherwise.
+      - name: Upload the installer's diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-diagnostics-node${{ matrix.node }}
+          path: installer.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   suite:
     name: project test suite
@@ -259,5 +313,70 @@ jobs:
             pytest httpx numpy pandas scikit-learn lightgbm mlflow skops \
             pyyaml pydriller fastapi shap sqlalchemy requests pydantic
 
+      # -rs so every skip is explained in the output.
+      #
+      # data/commit_features.csv and repos/ are gitignored, so this job -- which
+      # runs from a fresh clone -- has neither. The tests that need them carry
+      # needs_data / needs_repos and skip with a reason (tests/conftest.py)
+      # instead of erroring during collection, which is how this job failed on
+      # every run while passing locally. Reading the skip report is what keeps
+      # that from turning into silently testing less.
       - name: Run the test suite
-        run: python -m pytest tests/ -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests/ -q -rs 2>&1 | tee suite.log
+
+      - name: Upload the suite's diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-diagnostics
+          path: suite.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The same matrix `python -m scripts.ci.verify_all` runs on a developer
+  # machine, on all three platforms. `hooks` above proves the husky wiring with
+  # granular, platform-specific steps; this job proves that "it passed here"
+  # and "it passed in CI" are the same sentence, because both sides call one
+  # script instead of two lists that drift apart.
+  verification:
+    name: verification (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Same two libraries the hook tests need, and no more: this job is about
+      # the hook layer, so the ML stack would only slow it down.
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest pyyaml
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run the verification matrix
+        env:
+          HUSKY: "1"
+        run: python -m scripts.ci.verify_all --profile ci
+
+      - name: Upload the verification log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-diagnostics-${{ matrix.os }}
+          path: verify_all.log
+          if-no-files-found: ignore
+          retention-days: 14
