@@ -11,7 +11,12 @@
 "pipelines/*.py" = ["E402"]
 "ml/rebuild_b2.py" = ["B023", "DTZ005", "DTZ007", "PLW1510", "RUF059"]
 "ml/history_features.py" = ["SIM222"]
-"tests/*" = ["DTZ001", "DTZ005", "RUF013", "BLE001"]
+# Naive datetimes are inherent to the extraction and performance tests: they
+# compare git timestamps (`%ct`) against each other, not against wall clocks.
+# DTZ006 was simply missing from this list, so it is ignored alongside the two
+# rules it belongs with rather than "fixed" by attaching a timezone that the
+# values under comparison do not have.
+"tests/*" = ["DTZ001", "DTZ005", "DTZ006", "RUF013", "BLE001"]
 "api/main.py" = ["BLE001", "SIM115", "S110"]
 "scripts/score_pr.py" = ["BLE001", "S110", "PLR1722", "SIM115", "RUF013"]
 # Same shape of code as score_pr.py above (best-effort subprocess + model

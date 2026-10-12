@@ -4,6 +4,13 @@ import pytest
 
 from ml.extract_features import CommitFeatureExtractor
 
+# Bulk extraction is read from the training CSV and checked against a real
+# clone, so this module needs both inputs: neither is in a fresh clone.
+pytestmark = [
+    pytest.mark.needs_data,
+    pytest.mark.needs_repos("django", "kafka"),
+]
+
 REPO_MAP = {
     "django": "repos/django",
     "react": "repos/react",

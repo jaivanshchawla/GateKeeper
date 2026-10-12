@@ -1,0 +1,9 @@
+# Place-holder so this directory exists in a fresh clone.
+#
+# api/Dockerfile does `COPY dashboard/dist/ ./dashboard/dist/`, which fails at
+# build time when the directory is absent -- and dist/ is gitignored, so every
+# Gate 3 run from a clean checkout failed here. The build output itself stays
+# ignored (see .gitignore); this file only makes the directory real.
+#
+# Gate 3 additionally runs `npm --prefix dashboard run build` before
+# `docker compose build`, so the container normally gets a real dashboard too.

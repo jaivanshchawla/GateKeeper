@@ -9,6 +9,7 @@ outcome recording -- without touching this repository's own git state.
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import subprocess
@@ -47,6 +48,23 @@ HUSKY_DISPATCHER = rt.REPO_ROOT / ".husky" / "_" / "h"
 needs_husky = pytest.mark.skipif(
     not HUSKY_DISPATCHER.is_file(),
     reason="hooks are not generated (.husky/_/h missing) - run `npm install`",
+)
+
+# PyYAML is optional to the hook layer -- .gatekeeper.yml is read best-effort --
+# so a test that needs a *configured* list must skip where it is absent rather
+# than fail. CI got this backwards once: the `hooks` job installed pytest and
+# nothing else, so `test_reads_configured_list` failed on all four matrix legs
+# while passing on any developer machine that had PyYAML.
+try:
+    import yaml  # noqa: F401
+except ImportError:
+    YAML_AVAILABLE = False
+else:
+    YAML_AVAILABLE = True
+
+needs_yaml = pytest.mark.skipif(
+    not YAML_AVAILABLE,
+    reason="PyYAML is not installed; the hook layer only needs it for .gatekeeper.yml",
 )
 
 
@@ -102,6 +120,8 @@ class TestProtectedBranchPolicy:
         assert policy.is_protected("release/2.0")
         assert policy.is_protected("hotfix/urgent")
 
+    @pytest.mark.requires_yaml
+    @needs_yaml
     def test_reads_configured_list(self, repo):
         (repo / ".gatekeeper.yml").write_text(
             "protected_branches:\n  - trunk\n  - stable/*\n", encoding="utf-8"
@@ -110,15 +130,47 @@ class TestProtectedBranchPolicy:
         assert policy.is_protected("stable/1")
         assert not policy.is_protected("main")
 
+    @pytest.mark.requires_yaml
+    @needs_yaml
     def test_falls_back_when_yaml_is_broken(self, repo):
         (repo / ".gatekeeper.yml").write_text("::: not yaml ::\n\t", encoding="utf-8")
         assert policy.protected_branches()  # defaults survive a parse failure
+
+    def test_defaults_survive_a_missing_pyyaml(self, repo, monkeypatch):
+        """A machine without PyYAML must still get a working policy.
+
+        The hook layer reads .gatekeeper.yml best-effort: PyYAML is not a
+        dependency of the hooks, so its absence has to degrade to the built-in
+        defaults rather than raise. This pins that contract from the side the
+        suite can always reach -- it needs no YAML at all -- because the
+        configured-list tests above now skip instead of failing when the
+        library is missing. Without this, "PyYAML absent" would be an untested
+        state that only shows up as a red CI job.
+        """
+        (repo / ".gatekeeper.yml").write_text(
+            "protected_branches:\n  - trunk\n", encoding="utf-8"
+        )
+        real_import = builtins.__import__
+
+        def import_without_yaml(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("No module named 'yaml'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", import_without_yaml)
+
+        assert policy.gatekeeper_config() == {}
+        assert policy.protected_branches() == policy.DEFAULT_PROTECTED_BRANCHES
+        assert policy.is_protected("main")
+        assert not policy.is_protected("trunk")
 
     def test_current_branch(self, repo):
         assert policy.current_branch() == "main"
         _branch(repo, "feature/x")
         assert policy.current_branch() == "feature/x"
 
+    @pytest.mark.requires_yaml
+    @needs_yaml
     def test_rule_severity_reads_config(self, repo):
         (repo / ".gatekeeper.yml").write_text(
             "rules:\n  direct_to_main:\n    severity: block\n", encoding="utf-8"

@@ -15,9 +15,13 @@ from datetime import datetime
 
 import pytest
 
-
 REPO_PATH = "repos/rust"
 SMALL_REPOS = ["repos/django", "repos/react", "repos/kafka"]
+
+# A performance number means nothing without the clone it was measured on, and
+# repos/ is gitignored: this module skips -- naming the repositories -- rather
+# than erroring on a machine that has never cloned them.
+pytestmark = pytest.mark.needs_repos("rust", "django", "react", "kafka")
 
 # Performance targets (seconds)
 RUST_SINGLE_WARM_MAX = 2.0   # single commit, snapshot loaded
@@ -41,9 +45,12 @@ class TestRustPerformance:
     def test_single_commit_warm(self):
         """Rust single commit with snapshot must complete in <2s."""
         from ml.single_commit_features import (
-            clear_cache, compute_single_commit_m1_features,
-            _get_full_graph, _precompute_author_prior, _ensure_walk_snapshots,
+            _ensure_walk_snapshots,
+            _get_full_graph,
             _hot_state,
+            _precompute_author_prior,
+            clear_cache,
+            compute_single_commit_m1_features,
         )
         clear_cache()
 
@@ -77,9 +84,12 @@ class TestRustPerformance:
     def test_batch20_commits(self):
         """Rust batch 20 commits must complete in <30s."""
         from ml.single_commit_features import (
-            clear_cache, batch_score_commits,
-            _get_full_graph, _precompute_author_prior, _ensure_walk_snapshots,
+            _ensure_walk_snapshots,
+            _get_full_graph,
             _hot_state,
+            _precompute_author_prior,
+            batch_score_commits,
+            clear_cache,
         )
         clear_cache()
         _get_full_graph(REPO_PATH)
@@ -111,7 +121,7 @@ class TestSmallRepoPerformance:
     @pytest.mark.parametrize("repo_path", SMALL_REPOS)
     def test_cold_start(self, repo_path):
         """Small repo cold start must complete in <5s."""
-        from ml.single_commit_features import clear_cache, _get_full_graph
+        from ml.single_commit_features import _get_full_graph, clear_cache
         clear_cache()
 
         t0 = time.time()

@@ -2,12 +2,14 @@
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+import pytest
 import skops.io as sio
 import yaml
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 
 
+@pytest.mark.needs_data
 def test_training_reproducibility():
     """Same seed produces identical F1 to 8 decimal places."""
     with open("ml/config.yaml") as f:

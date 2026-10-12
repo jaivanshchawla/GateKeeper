@@ -1,6 +1,7 @@
 """Fuzz and threshold boundary tests for the /predict endpoint."""
 import random
 
+import pytest
 import skops.io as sio
 from fastapi.testclient import TestClient
 
@@ -178,11 +179,11 @@ def test_threshold_boundaries():
         assert actual == expected_label, f"Score {score}: expected {expected_label}, got {actual}"
 
 
+@pytest.mark.needs_data
 def test_band_shares_match_percentiles():
     """Per-repo bands must be within 2pp of 10/15/75 on the training distribution."""
-    import yaml
-    import numpy as np
     import pandas as pd
+    import yaml
 
     with open("ml/config.yaml") as f:
         config = yaml.safe_load(f)
@@ -200,7 +201,6 @@ def test_band_shares_match_percentiles():
         rdf = df[df["source_repo"] == repo].copy()
         X = rdf[feature_cols].fillna(0).values
         scores = model.predict_proba(X)[:, 1]
-        total = len(scores)
 
         repo_thr = thresholds.get(repo, thresholds.get("_global", {}))
         high_cut = repo_thr["high"]
