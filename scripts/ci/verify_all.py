@@ -318,6 +318,18 @@ def _docker_rehearsal(log: _Log) -> bool:
 
 
 STEPS: tuple[Step, ...] = (
+    # First, because everything below assumes the hooks are wired: a fresh
+    # clone has no core.hooksPath and no generated .husky/_/, so `doctor
+    # --strict` cannot pass before this runs. It did run first here, which is
+    # why the verification job failed on all three platforms while passing on
+    # every developer machine -- those already had husky installed.
+    Step(
+        name="install",
+        why="install, uninstall and reinstall leave exactly the state they should",
+        ci_step="Install, uninstall and reinstall",
+        run=_install_round_trip,
+        requires=("git", "python", "node"),
+    ),
     Step(
         name="doctor",
         why="the hook wiring is intact, strictly (a missing piece is a failure here)",
@@ -334,15 +346,12 @@ STEPS: tuple[Step, ...] = (
         requires=("git", "python"),
     ),
     Step(
-        name="install",
-        why="install, uninstall and reinstall leave exactly the state they should",
-        ci_step="Install, uninstall and reinstall",
-        run=_install_round_trip,
-        requires=("git", "python", "node"),
-    ),
-    Step(
         name="hook-tests",
-        why="the hook layer's tests pass with only pytest and PyYAML installed",
+        why=(
+            "the hook layer's tests pass with only pytest, PyYAML and ruff "
+            "installed -- ruff is not imported, it is run, which is why it "
+            "was missing from every job that ran these tests"
+        ),
         ci_step="Run the hook tests",
         command=_pytest(*HOOK_TEST_FILES),
         requires=("git", "python"),

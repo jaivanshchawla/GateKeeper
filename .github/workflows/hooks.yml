@@ -93,14 +93,24 @@ jobs:
       # was missing here, so they failed on all four matrix legs while passing
       # on every machine that happened to have PyYAML: the exact shape of a
       # green laptop and a red CI.
+      #
+      # ruff is here for the same reason and was missing for the same reason.
+      # Nothing *imports* it, so it never showed up in an import graph, but the
+      # pre-commit/pre-applypatch tests call the hooks that run it -- and a
+      # missing ruff made a hook block a clean staged change.
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest pyyaml
+        run: python -m pip install --upgrade pip pytest pyyaml ruff
 
       # The step above is load-bearing, so its absence must be loud. Without
       # this, deleting `pyyaml` would turn the configured-list tests into
       # skips and the job would stay green while testing less.
       - name: The policy config is readable in this job
         run: python -c "import yaml; print('PyYAML', yaml.__version__)"
+
+      # And the linter must be there too: a hook that cannot lint a staged
+      # change reports lint errors that do not exist.
+      - name: The linter is runnable in this job
+        run: python -m ruff --version
 
       # tee so a failure can be read from the run's artifacts: job logs are
       # otherwise only visible to someone signed in to GitHub, which is why
@@ -304,14 +314,17 @@ jobs:
       # guessed. httpx is kept even though nothing imports it: starlette's
       # TestClient needs it at runtime, which is exactly the kind of gap a
       # static reading misses. requests and pydantic are cheap insurance for
-      # the same reason. prometheus_fastapi_instrumentator and uvicorn are
-      # genuinely optional (guarded / under __main__), so they are left out.
+      # the same reason. ruff is that same gap in another shape: the hook tests
+      # *run* it as a subprocess (pre-commit lints the staged files), so no
+      # import graph contains it and leaving it out made three tests fail.
+      # prometheus_fastapi_instrumentator and uvicorn are genuinely optional
+      # (guarded / under __main__), so they are left out.
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
             pytest httpx numpy pandas scikit-learn lightgbm mlflow skops \
-            pyyaml pydriller fastapi shap sqlalchemy requests pydantic
+            pyyaml pydriller fastapi shap sqlalchemy requests pydantic ruff
 
       # -rs so every skip is explained in the output.
       #
@@ -359,10 +372,10 @@ jobs:
         with:
           node-version: "20"
 
-      # Same two libraries the hook tests need, and no more: this job is about
-      # the hook layer, so the ML stack would only slow it down.
+      # Same three libraries the hook tests need, and no more: this job is
+      # about the hook layer, so the ML stack would only slow it down.
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest pyyaml
+        run: python -m pip install --upgrade pip pytest pyyaml ruff
 
       - name: Install Node dependencies
         run: npm ci --ignore-scripts

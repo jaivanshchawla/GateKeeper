@@ -23,7 +23,7 @@ developer machine.
 `hooks.yml` is the one that gates every branch, so it is also the one that was
 paid the most attention.
 
-## 2. The three failures this document was written about
+## 2. The failures this document was written about
 
 ### 2.1 `hooks` job — a test needed a library the job did not install
 
@@ -89,6 +89,33 @@ Fixed twice over, because either fix alone leaves a hole:
    `.gitignore`), so the directory exists even for a `docker compose build` that
    skips step 1. Build output stays ignored.
 
+### 2.4 `verification` job — the matrix checked the wiring before installing it
+
+`verify_all` ran `doctor --strict` first. On a developer machine that passes,
+because husky was installed months ago. A fresh clone has no `core.hooksPath`
+and no generated `.husky/_/`, and `--strict` promotes the resulting warning to a
+failure — so the job failed on Ubuntu, macOS and Windows before it reached a
+single real problem.
+
+Fixed by ordering: `install` (install → uninstall → reinstall, which ends
+installed) now runs before `doctor`. The matrix wires the hooks it is about to
+check, so it no longer depends on the machine having done it already.
+
+### 2.5 The next run — three tests that reported on the runner
+
+With the above fixed, the next run still failed, for three reasons that have the
+same shape: a test answered a question about the machine it ran on rather than
+about the code.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `git rev-parse HEAD~1` raised | `actions/checkout` clones with depth 1; there is no parent commit | the test builds a two-commit throwaway repository and asserts the exact changed-file list, so it also stops accepting an empty result |
+| `FileNotFoundError: 'sh'` | the test empties `PATH` on purpose, and exec search uses the child's `PATH`, so `sh` could not launch | the helper resolves an absolute shell path before the test's env is applied |
+| `No module named ruff`, then a hook blocked a clean file | nothing imports ruff, so no import graph mentioned it, but `pre-commit` and `pre-applypatch` *run* it | `ruff` is installed in `hooks`, `suite` and `verification`, and the `hooks` job asserts `python -m ruff --version` |
+
+The first one is the general lesson: a test that depends on how deep the
+checkout is will be green forever on a developer's full clone.
+
 ## 3. Running the whole matrix locally
 
 ```bash
@@ -108,10 +135,10 @@ What it covers, in order:
 
 | Step | What it proves |
 |---|---|
+| `install` | install → uninstall → reinstall leaves exactly the expected `core.hooksPath` and `.husky/_` (first, so the checks below have something to check) |
 | `doctor` | `scripts.hooks.verify --strict`: the wiring is intact |
 | `inventory` | `--list` reports `14/14 husky hooks` |
-| `install` | install → uninstall → reinstall leaves exactly the expected `core.hooksPath` and `.husky/_` |
-| `hook-tests` | the hook layer's tests pass with only pytest and PyYAML present |
+| `hook-tests` | the hook layer's tests pass with only pytest, PyYAML and ruff present |
 | `hostile-environment` | the same tests pass with every hook switch exported against them and a gate-run marker planted |
 | `trace` | `HUSKY=2` reaches the Python layer and names the interpreter |
 | `real-shims` | the real `.husky/_` → `.husky/<hook>` chain exits 0 through `sh` |
@@ -154,8 +181,11 @@ not see them:
 
 * every workflow parses and declares a trigger;
 * the `hooks` job installs `pyyaml` **and** asserts that importing it works;
+* every job that runs the hook tests installs `ruff`, and the `hooks` job
+  asserts that `python -m ruff` runs;
 * the YAML-dependent tests carry a skip derived from availability, not a constant;
-* the `suite` job installs `pyyaml` and runs with `-rs`;
+* the `suite` job installs `pyyaml` and `ruff`, and runs with `-rs`;
+* `verify_all` installs the hooks before `doctor --strict` checks them;
 * every test that reads `commit_features.csv` or `repos/` declares a marker or
   guards itself — checked by parsing the test files with `ast`;
 * Gate 3 builds the dashboard *before* building the images;
@@ -181,3 +211,9 @@ not see them:
 * **The pre-push gate is not part of this matrix.** `verify_all` is what a
   developer runs deliberately; the pre-push hook is what runs whether they meant
   it or not.
+* **One perf test is machine-sensitive.**
+  `test_perf_regression.py::test_single_commit_warm` compares a warm run against
+  a 2.0 s budget and measures 2.1–2.4 s on a loaded laptop, on unchanged code.
+  It carries `needs_repos`, so it skips in CI and anywhere without `repos/`;
+  `GATEKEEPER_HOOK_TESTS=0 git push` skips the gate's test phase while Gate 1
+  scoring and the ruff check still run.

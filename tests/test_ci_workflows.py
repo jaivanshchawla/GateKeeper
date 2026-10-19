@@ -161,6 +161,35 @@ def test_the_policy_still_works_without_pyyaml():
 
 
 # --------------------------------------------------------------------------
+# The ruff failure: a hook the tests *run* is a dependency too
+# --------------------------------------------------------------------------
+#
+# ruff is imported by nothing, so no import graph mentions it. The hook tests
+# nonetheless call pre-commit and pre-applypatch, which lint staged files by
+# running `python -m ruff`. Without it the hook blocked a clean staged change,
+# and every job that ran those tests went red for a missing binary.
+
+
+@pytest.mark.parametrize("job", ["hooks", "suite", "verification"])
+def test_every_job_that_runs_the_hook_tests_installs_ruff(job: str):
+    steps = _steps(_workflow("hooks.yml"), job)
+    install = _script(_step(steps, "Install test dependencies"))
+    assert "ruff" in install.lower(), (
+        f"the `{job}` job runs the hook tests, which lint through ruff; "
+        "installing only the libraries they import misses it"
+    )
+
+
+def test_the_hooks_job_proves_the_linter_runs():
+    """Otherwise deleting it from the install line is silent until a test fails."""
+    steps = _steps(_workflow("hooks.yml"), "hooks")
+    scripts = "\n".join(_script(step) for step in steps)
+    assert re.search(r"python -m ruff\b", scripts), (
+        "the `hooks` job needs a step that fails when ruff is not runnable"
+    )
+
+
+# --------------------------------------------------------------------------
 # The suite job: a red run, and a green-by-absence one, are both failures
 # --------------------------------------------------------------------------
 
@@ -458,6 +487,24 @@ def test_every_verify_all_step_names_a_step_that_exists_in_a_workflow():
         "these verification steps claim a CI equivalent that no longer exists, so "
         "the local matrix and CI have drifted apart:\n  " + "\n  ".join(missing)
     )
+
+
+def test_verify_all_wires_the_hooks_before_it_checks_them():
+    """The verification job failed on every OS because of this order.
+
+    A fresh clone has neither core.hooksPath nor a generated .husky/_/, and
+    `doctor --strict` reports both as failures. That is a real property of the
+    checkout, not of the wiring, so the matrix has to install first -- which
+    it did not, and every developer machine already had husky installed.
+    """
+    from scripts.ci import verify_all
+
+    order = [step.name for step in verify_all.STEPS]
+    assert order.index("install") < order.index("doctor"), (
+        "`doctor --strict` fails on a fresh clone until the hooks are installed"
+    )
+    assert order.index("install") < order.index("hook-tests")
+    assert order.index("install") < order.index("hostile-environment")
 
 
 def test_verify_all_still_covers_the_hook_layer():
