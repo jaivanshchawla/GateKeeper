@@ -116,12 +116,38 @@ class TestPushRefParsing:
         files = rt.changed_files(line, "*.py")
         assert isinstance(files, list)
 
-    def test_existing_branch_diff_is_scoped_to_outgoing_commits(self):
-        head = rt.git("rev-parse", "HEAD", check=True)[1]
-        parent = rt.git("rev-parse", "HEAD~1", check=True)[1]
+    def test_existing_branch_diff_is_scoped_to_outgoing_commits(self, tmp_path):
+        """Only the outgoing diff, and only the files matching the glob.
+
+        A throwaway repository, not this checkout: CI clones with depth 1, so
+        `HEAD~1` does not exist there, and the old assertion (`every name ends
+        in .py`) was satisfied by an empty list even where it did.
+        """
+        repo = tmp_path / "repo"
+
+        def run(*args: str) -> str:
+            result = subprocess.run(
+                ["git", *args], cwd=repo, capture_output=True, text=True, check=False
+            )
+            assert result.returncode == 0, result.stderr
+            return result.stdout.strip()
+
+        repo.mkdir()
+        run("init", "-q")
+        (repo / "old.py").write_text("x = 1\n", encoding="utf-8")
+        (repo / "notes.txt").write_text("before\n", encoding="utf-8")
+        run("add", ".")
+        run("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "one")
+        parent = run("rev-parse", "HEAD")
+
+        (repo / "new.py").write_text("y = 2\n", encoding="utf-8")
+        (repo / "notes.txt").write_text("after\n", encoding="utf-8")
+        run("add", ".")
+        run("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "two")
+        head = run("rev-parse", "HEAD")
+
         line = f"refs/heads/husky {head} refs/heads/husky {parent}"
-        files = rt.changed_files(line, "*.py")
-        assert all(f.endswith(".py") for f in files)
+        assert rt.changed_files(line, "*.py", cwd=repo) == ["new.py"]
 
 
 class TestRuntimeResolution:

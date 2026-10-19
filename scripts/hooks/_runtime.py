@@ -258,18 +258,24 @@ def project_python() -> str:
     return "python3"
 
 
-def git(*args: str, check: bool = False) -> tuple[int, str]:
+def git(
+    *args: str, check: bool = False, cwd: Path | None = None
+) -> tuple[int, str]:
     """Run a git command in the repo root and return (code, stripped stdout).
+
+    ``cwd`` exists so a test can point the same logic at a throwaway
+    repository. Hooks never pass it: for them the repo root is the answer.
 
     Returns 127 rather than raising when git cannot be started at all -- for
     instance when the working directory has been deleted underneath a hook.
     A hook must degrade to "no answer", not to a traceback.
     """
-    trace(f"git {' '.join(args)} (in {REPO_ROOT})")
+    directory = cwd or REPO_ROOT
+    trace(f"git {' '.join(args)} (in {directory})")
     try:
         result = subprocess.run(
             ["git", *args],
-            cwd=REPO_ROOT,
+            cwd=directory,
             capture_output=True,
             text=True,
             check=False,
@@ -459,31 +465,37 @@ def parse_push_refs(stdin_data: str) -> list[tuple[str, str]]:
     return refs
 
 
-def _fallback_base() -> str | None:
+def _fallback_base(cwd: Path | None = None) -> str | None:
     """Best guess at the branch a new local branch forked from."""
     for candidate in ("origin/main", "origin/master", "main", "master"):
-        code, _ = git("rev-parse", "--verify", "--quiet", candidate)
+        code, _ = git("rev-parse", "--verify", "--quiet", candidate, cwd=cwd)
         if code == 0:
             return candidate
     return None
 
 
-def changed_files(stdin_data: str, *globs: str) -> list[str]:
+def changed_files(
+    stdin_data: str, *globs: str, cwd: Path | None = None
+) -> list[str]:
     """Files changed by the refs being pushed, limited to ``globs``.
 
     Mirrors pre-commit's behaviour of linting only what changed. This repo
     has pre-existing lint debt, so a whole-tree lint here would block every
     push; scoping to the outgoing diff keeps the gate meaningful.
+
+    ``cwd`` is for tests: it lets them assert the diff scoping against a
+    throwaway repository instead of the checkout they happen to run in. The
+    hooks' own callers leave it unset.
     """
     patterns = list(globs) or ["."]
     seen: list[str] = []
     for remote_sha, local_sha in parse_push_refs(stdin_data):
         if remote_sha == ZERO_SHA:
-            base = _fallback_base()
+            base = _fallback_base(cwd)
             spec = f"{base}...{local_sha}" if base else f"{local_sha}~1..{local_sha}"
         else:
             spec = f"{remote_sha}..{local_sha}"
-        code, out = git("diff", "--name-only", spec, "--", *patterns)
+        code, out = git("diff", "--name-only", spec, "--", *patterns, cwd=cwd)
         if code != 0:
             continue
         for path in out.splitlines():

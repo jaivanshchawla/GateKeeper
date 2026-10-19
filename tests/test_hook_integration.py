@@ -12,6 +12,7 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -354,9 +355,14 @@ class TestBootstrapShell:
 
     @staticmethod
     def _sh(script: str, env: dict | None = None) -> subprocess.CompletedProcess:
+        # An absolute path, resolved *before* the caller's env is applied: one
+        # of these tests empties PATH on purpose, and exec search uses the
+        # child's PATH, so a bare "sh" would fail to launch the very shell that
+        # is supposed to prove the hook fails cleanly.
+        shell = shutil.which("sh") or "sh"
         merged = {**os.environ, **(env or {})}
         return subprocess.run(
-            ["sh", "-c", script],
+            [shell, "-c", script],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
