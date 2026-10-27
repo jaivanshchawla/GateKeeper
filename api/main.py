@@ -4,22 +4,15 @@ FastAPI application for Gatekeeper MLOps quality gate.
 Provides prediction endpoint for commit risk assessment.
 """
 
+import json as _json
 import os
+import subprocess
 import sys
-
-# W1.4: Ensure project root is on sys.path for ml imports
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-try:
-    import mlflow
-    import mlflow.pyfunc
-except ImportError:
-    mlflow = None
-    mlflow_pyfunc = None
 import numpy as np
 import skops.io as sio
 import yaml
@@ -27,9 +20,24 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 try:
+    import mlflow
+    import mlflow.pyfunc
+except ImportError:
+    mlflow = None
+    mlflow_pyfunc = None
+
+try:
     from prometheus_fastapi_instrumentator import Instrumentator
 except ImportError:
     Instrumentator = None
+
+# W1.4: Ensure project root is on sys.path for ML imports used inside handlers.
+# This sits below the imports on purpose: a statement between imports makes
+# every import after it an E402, which is how this file accumulated the lint
+# debt that blocked any commit touching it.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 # Load configuration
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "config.yaml")
@@ -335,10 +343,8 @@ async def score_pr(request: ScorePRRequest):
         from ml.pr_scoring import (
             CommitScore,
             aggregate_commits_to_pr,
-            detect_pr_patterns,
             format_pr_comment,
         )
-
         from ml.scoring import evaluate_commit_full
 
         commit_scores = []
@@ -480,13 +486,6 @@ async def simulate(request: SimulateRequest):
 # They read from data files and repos/ when Postgres is not available,
 # and fall back to Postgres when DATABASE_URL is set.
 
-import json as _json
-import subprocess
-import glob as _glob
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from collections import defaultdict
-
 PROJECT_ROOT = Path(__file__).parent.parent
 REPOS_DIR = PROJECT_ROOT / "repos"
 DATA_DIR = PROJECT_ROOT / "data"
@@ -574,7 +573,10 @@ async def list_repos():
 
 
 @app.get("/repos/{repo_id}")
-async def get_repo(repo_id: str):
+# These four routes read files and shell out to git. They are synchronous on
+# purpose: FastAPI runs sync handlers in a worker thread, whereas an `async def`
+# with blocking calls stalls the event loop for every other request.
+def get_repo(repo_id: str):
     """Get repo detail with commits, band distribution, and file hotspots."""
     if repo_id not in REPO_MAP:
         raise HTTPException(status_code=404, detail=f"Repo {repo_id} not found")
@@ -672,7 +674,7 @@ async def get_repo(repo_id: str):
 
 
 @app.get("/commits/{commit_id}")
-async def get_commit(commit_id: str):
+def get_commit(commit_id: str):
     """Get commit detail with SHAP, rules, and file info."""
     # Search training CSV
     csv_path = DATA_DIR / "commit_features.csv"
@@ -751,13 +753,18 @@ async def get_commit(commit_id: str):
                     "shap_top3": shap_top3,
                     "files_touched": files,
                 }
-        except Exception as outer_err:
-            import traceback; traceback.print_exc()
+        except Exception:
+            # The traceback is the only diagnostic for an unparseable row, and
+            # it is deliberately loud: silently returning 404 hid a broken
+            # feature-file format for a whole session once.
+            import traceback
+
+            traceback.print_exc()
     raise HTTPException(status_code=404, detail=f"Commit {commit_id} not found")
 
 
 @app.get("/prs")
-async def list_prs():
+def list_prs():
     """List scored PRs from pre-scored data."""
     prs_file = DATA_DIR / "scored_prs.json"
     if prs_file.exists():
@@ -768,14 +775,14 @@ async def list_prs():
 
 
 @app.get("/files/{file_path:path}")
-async def get_file(file_path: str):
+def get_file(file_path: str):
     """Get file risk history from git log."""
     # Search across all repos
     history = []
     total_changes = 0
     revert_count = 0
     authors = set()
-    for name, rp in REPO_MAP.items():
+    for rp in REPO_MAP.values():
         if not rp.exists():
             continue
         try:
@@ -848,63 +855,56 @@ async def save_config(new_config: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/meta/artifacts")
+async def artifact_manifest():
+    """Every committed metric artifact, its digest, and whether its inputs moved.
+
+    This is the endpoint a reviewer opens when a dashboard number looks wrong:
+    it answers "which file said so, and is that file still describing the code
+    on disk?" without reading the repository.
+    """
+    from artifacts import ArtifactError
+    from artifacts.views import artifact_manifest as project
+
+    try:
+        return project()
+    except ArtifactError as exc:
+        raise HTTPException(503, f"artifact manifest unavailable: {exc}") from exc
+
+
 @app.get("/model/health")
 async def model_health():
-    """Model version and performance info."""
-    return {
-        "version": "v8",
-        "roc_auc": 0.7885,
-        "oow_auc": 0.6196,
-        "n_features": 35,
-        "training_repos": 5,
-        "training_commits": 10000,
-        "per_repo_oow": {
-            "django": 0.660,
-            "react": 0.581,
-            "kafka": 0.633,
-            "kubernetes": 0.650,
-            "rust": 0.574,
-        },
-    }
+    """Model identity and measured performance, projected from an artifact.
+
+    Nothing is computed in the route: artifacts/views.py reads
+    artifacts/model_metrics.json, and tests/test_artifact_truth.py proves every
+    leaf against it. A retrain that does not regenerate the artifact fails CI
+    instead of shipping a stale number.
+    """
+    from artifacts import ArtifactError
+    from artifacts.views import model_health as project
+
+    try:
+        return project()
+    except ArtifactError as exc:
+        raise HTTPException(503, f"metric artifact unavailable: {exc}") from exc
 
 
 @app.get("/drift")
 async def drift_status():
-    """Per-repo drift status."""
-    repos_out = {}
-    for name in REPO_NAMES:
-        oow_path = DATA_DIR / f"u69_{name}_oow.json"
-        if oow_path.exists():
-            try:
-                oow = _json.loads(oow_path.read_text())
-                repos_out[name] = {
-                    "reference_rows": 2000,
-                    "current_rows": oow.get("n_commits", 0),
-                    "dataset_drift": False,
-                    "drift_share": 0.0,
-                    "needs_retraining": False,
-                    "drifted_features": [],
-                }
-            except Exception:
-                pass
-        else:
-            repos_out[name] = {
-                "reference_rows": 2000,
-                "current_rows": 0,
-                "dataset_drift": False,
-                "drift_share": 0.0,
-                "needs_retraining": False,
-                "drifted_features": [],
-            }
-    return {"repos": repos_out}
+    """Per-repository drift exactly as the committed Evidently run reported it."""
+    from artifacts import ArtifactError
+    from artifacts.views import drift_status as project
+
+    try:
+        return project()
+    except ArtifactError as exc:
+        raise HTTPException(503, f"drift artifact unavailable: {exc}") from exc
 
 
 # ── W7.3: Issue CRUD + Stats (migrated from Flask) ──
 # These were previously served by webhook/routes/dashboard.py (Flask).
 # Now consolidated into the single FastAPI backend.
-
-import json as _json_issues
-from datetime import datetime as _dt
 
 
 @app.post("/issues")
@@ -942,14 +942,20 @@ async def create_issue(data: dict):
 
 
 @app.get("/issues")
-async def list_issues(status: str = None, repo: str = None, limit: int = 100, offset: int = 0):
+async def list_issues(
+    status: str | None = None,
+    repo: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
     """List issues with optional filters."""
     db = _get_db()
     if not db:
         raise HTTPException(503, "Database not available")
     try:
-        from webhook.models import Issue
         from sqlalchemy import desc
+
+        from webhook.models import Issue
         query = db.query(Issue)
         if status:
             query = query.filter(Issue.status == status)
@@ -980,7 +986,7 @@ async def toggle_issue_status(issue_id: int):
         if not issue:
             raise HTTPException(404, "Issue not found")
         issue.status = "resolved" if issue.status == "open" else "open"
-        issue.updated_at = _dt.utcnow()
+        issue.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
         db.refresh(issue)
         return {"message": f"Issue status toggled to {issue.status}", "issue": issue.to_dict()}
@@ -1000,9 +1006,11 @@ async def issue_stats(days: int = 30):
     if not db:
         raise HTTPException(503, "Database not available")
     try:
+        from sqlalchemy import func
+
         from webhook.models import Issue
-        from sqlalchemy import desc, func
-        start_date = _dt.utcnow() - timedelta(days=days)
+
+        start_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         stats = (
             db.query(
                 func.date(Issue.created_at).label("date"),

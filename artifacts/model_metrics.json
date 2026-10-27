@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "generator": "ml/build_metrics_artifact.py",
+  "model": {
+    "version": "skops-6cc7a64a9579",
+    "sha256": "6cc7a64a9579f3bbed393a4fe6f2a3fb79ab409fdcda4728189c61fd99ec1d0c",
+    "bytes": 389411,
+    "path": "models/gatekeeper_risk_model.skops"
+  },
+  "metrics": {
+    "loro_roc_auc": 0.7783761339784208,
+    "loro_roc_auc_claimed": 0.7885,
+    "oow_auc_mean": 0.6195600000000001,
+    "oow_auc_mean_excl_react": 0.6292500000000001,
+    "oow_auc_claimed": 0.6293,
+    "n_features": 35,
+    "training_repos": 5,
+    "training_commits": 10000
+  },
+  "per_repo_oow": {
+    "django": {
+      "roc_auc": 0.66,
+      "n": 133,
+      "ci": [
+        0.557,
+        0.748
+      ],
+      "base_rate": 0.406
+    },
+    "kafka": {
+      "roc_auc": 0.633,
+      "n": 296,
+      "ci": [
+        0.5728,
+        0.6919
+      ],
+      "base_rate": 0.5034
+    },
+    "kubernetes": {
+      "roc_auc": 0.6497,
+      "n": 871,
+      "ci": [
+        0.6072,
+        0.6904
+      ],
+      "base_rate": 0.7015
+    },
+    "react": {
+      "roc_auc": 0.5808,
+      "n": 99,
+      "ci": [
+        0.4717,
+        0.6888
+      ],
+      "base_rate": 0.5455
+    },
+    "rust": {
+      "roc_auc": 0.5743,
+      "n": 3537,
+      "ci": [
+        0.5534,
+        0.5955
+      ],
+      "base_rate": 0.6997
+    }
+  },
+  "sources": {
+    "/model/version": {
+      "path": "models/gatekeeper_risk_model.skops",
+      "method": "sha256",
+      "note": "first 12 hex characters of the model digest"
+    },
+    "/model/sha256": {
+      "path": "models/gatekeeper_risk_model.skops",
+      "method": "sha256"
+    },
+    "/metrics/loro_roc_auc": {
+      "path": "data/p3_p4_results.json",
+      "pointer": "/v7_loro_roc_auc"
+    },
+    "/metrics/loro_roc_auc_claimed": {
+      "path": "governance/model_card.md",
+      "method": "regex",
+      "note": "headline metrics table"
+    },
+    "/metrics/oow_auc_mean": {
+      "path": "data/w72_<repo>.json",
+      "pointer": "/metrics/roc_auc",
+      "method": "mean over per_repo_oow"
+    },
+    "/metrics/oow_auc_mean_excl_react": {
+      "path": "data/w72_<repo>.json",
+      "pointer": "/metrics/roc_auc",
+      "method": "mean over per_repo_oow excluding react"
+    },
+    "/metrics/n_features": {
+      "path": "ml/config.yaml",
+      "pointer": "/feature_columns",
+      "method": "length"
+    },
+    "/metrics/training_repos": {
+      "path": "data/dataset_manifest.json",
+      "pointer": "/repos",
+      "method": "count"
+    },
+    "/metrics/training_commits": {
+      "path": "data/dataset_manifest.json",
+      "pointer": "/repos/<repo>/sampled_rows",
+      "method": "sum"
+    },
+    "/per_repo_oow": {
+      "path": "data/w72_<repo>.json",
+      "pointer": "/metrics"
+    }
+  },
+  "inputs": {
+    "data/dataset_manifest.json": {
+      "sha256": "7f138b86a6d850575c795b925650717740c8a24445a0affb7b23851dc3a8c99a",
+      "bytes": 1944
+    },
+    "data/p3_p4_results.json": {
+      "sha256": "094547f57e14e24466fca08173c85f3c9b84598948063509c1666861a63125ee",
+      "bytes": 2271
+    },
+    "data/w72_django.json": {
+      "sha256": "1d34de021bb77c454e1dae50cfc5ad6937b4792a3d3efaea406c3281dddc032c",
+      "bytes": 742
+    },
+    "data/w72_kafka.json": {
+      "sha256": "b284a11f094c50965fc33e819e57bda28b8cbd542ccb44bfd8261536b4f6497c",
+      "bytes": 772
+    },
+    "data/w72_kubernetes.json": {
+      "sha256": "7ec23126cb284ba520bc005daaf7232f4dac48e1c276b6e64dcb016fd371dc3d",
+      "bytes": 775
+    },
+    "data/w72_react.json": {
+      "sha256": "7ab80c1d2b21efa3c93621f484ccf19fd5419666f2aae0783119a884255c4b42",
+      "bytes": 758
+    },
+    "data/w72_rust.json": {
+      "sha256": "63ba6e306a4d1b3dd1c78da339b6949542c5cc360c8121696887e86646d9c955",
+      "bytes": 783
+    },
+    "governance/model_card.md": {
+      "sha256": "428f123bbe359994b5ba2d80e8ec5ce88463e9dc8dea57efd92896ec63ba07f7",
+      "bytes": 22287
+    },
+    "ml/config.yaml": {
+      "sha256": "2e0e0bba913d416b6f6a79179775113825e8b0b667218d0129dec4eb2c313db3",
+      "bytes": 1986
+    },
+    "models/gatekeeper_risk_model.skops": {
+      "sha256": "6cc7a64a9579f3bbed393a4fe6f2a3fb79ab409fdcda4728189c61fd99ec1d0c",
+      "bytes": 389411
+    }
+  },
+  "warnings": [
+    "django: OOW n=133 (<200); AUC 0.660 has a wide interval [0.557, 0.748] — treat as directional, not a point estimate.",
+    "governance/model_card.md claims loro_roc_auc=0.7885; data/p3_p4_results.json / frozen OOW artifacts give 0.7784 (-0.0101). Serving the artifact value — update the card or commit the run that produced the claimed number.",
+    "react: OOW n=99 (<200); AUC 0.581 has a wide interval [0.472, 0.689] — treat as directional, not a point estimate."
+  ]
+}

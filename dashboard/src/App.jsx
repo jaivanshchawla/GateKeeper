@@ -469,12 +469,35 @@ function ModelHealthView() {
   return (
     <div>
       <h1>Model Health</h1>
+      {/* No fallbacks here on purpose: a missing number renders as '-', never as
+          a remembered constant. The values come from artifacts/model_metrics.json
+          and every one is proven against it by tests/test_artifact_truth.py. */}
       <div className="stats-grid">
-        <StatCard value={health?.version || 'v8'} label="Model Version" />
+        <StatCard value={health?.version || '-'} label="Model Version" />
         <StatCard value={health?.roc_auc ? health.roc_auc.toFixed(3) : '-'} label="ROC-AUC (LORO)" />
         <StatCard value={health?.oow_auc ? health.oow_auc.toFixed(3) : '-'} label="ROC-AUC (OOW)" />
-        <StatCard value={health?.n_features || 35} label="Features" />
+        <StatCard value={health?.n_features || '-'} label="Features" />
       </div>
+
+      {health?.artifact && (
+        <p style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 16 }}>
+          Served from <code>{health.artifact}</code>
+          {health.artifact_stale && (
+            <strong style={{ color: 'var(--risk-med-text)' }}>
+              {' '}· inputs changed since this artifact was built
+            </strong>
+          )}
+        </p>
+      )}
+
+      {health?.warnings?.length > 0 && (
+        <div className="card" style={{ borderColor: 'var(--risk-med)' }}>
+          <h2>Artifact warnings</h2>
+          <ul className="file-list">
+            {health.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
 
       {health?.per_repo_oow && (
         <div className="card">

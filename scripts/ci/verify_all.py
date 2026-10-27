@@ -436,6 +436,18 @@ STEPS: tuple[Step, ...] = (
         requires=("git", "python", "shellcheck"),
     ),
     Step(
+        name="metrics-artifact",
+        why=(
+            "every dashboard number still comes from a committed artifact: the "
+            "artifact rebuilds identically from its recorded inputs, and a "
+            "retrain that forgot to regenerate it fails here rather than "
+            "appearing on the dashboard"
+        ),
+        ci_step="Run the test suite",
+        command=(PYTHON, "ml/build_metrics_artifact.py", "--check"),
+        requires=("python",),
+    ),
+    Step(
         name="project-suite",
         why="the whole project suite still passes with the hooks installed",
         ci_step="Run the test suite",
