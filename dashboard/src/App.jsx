@@ -8,7 +8,7 @@ import {
 const API = import.meta.env.VITE_API_URL || ''
 const BAND_COLORS = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' }
 const BAND_BG = { high: 'rgba(239,68,68,0.12)', medium: 'rgba(245,158,11,0.12)', low: 'rgba(34,197,94,0.12)' }
-const BAND_DISPLAY = { high: 'HIGH RISK', medium: 'ELEVATED', low: 'NOT FLAGGED' }
+const BAND_DISPLAY = { high: 'HIGH RISK', medium: 'ELEVATED', low: 'NOT FLAGGED', unscored: 'NOT SCORED' }
 
 // ── API helpers ──────────────────────────────────────────────
 async function api(path) {
@@ -46,6 +46,7 @@ function OverviewView({ onSelectRepo }) {
   useEffect(() => { api('/repos').then(setRepos).catch(() => {}).finally(() => setLoading(false)) }, [])
   if (loading) return <Loading />
 
+  const issuesKnown = repos.every(r => r.open_issues != null)
   const totalIssues = repos.reduce((s, r) => s + (r.open_issues || 0), 0)
   const totalCommits = repos.reduce((s, r) => s + (r.total_commits || 0), 0)
 
@@ -55,7 +56,7 @@ function OverviewView({ onSelectRepo }) {
       <div className="stats-grid">
         <StatCard value={repos.length} label="Repos" />
         <StatCard value={totalCommits} label="Commits Scored" />
-        <StatCard value={totalIssues} label="Open Issues" risk={totalIssues > 0 ? 'high' : 'low'} />
+        <StatCard value={issuesKnown ? totalIssues : '—'} label={issuesKnown ? 'Open Issues' : 'Open Issues (no DB)'} risk={totalIssues > 0 ? 'high' : 'low'} />
       </div>
       <div className="card">
         <h2>Repositories</h2>
@@ -65,15 +66,17 @@ function OverviewView({ onSelectRepo }) {
               <h3>{repo.name}</h3>
               <div className="repo-url">{repo.remote_url || 'no remote'}</div>
               <div className="repo-stats">
-                <BandBadge band={repo.last_score || 'low'} />
-                <span>{repo.open_issues || 0} issues</span>
+                <BandBadge band={repo.latest_band || 'unscored'} />
+                <span>{repo.open_issues == null ? 'issues: unknown' : `${repo.open_issues} issues`}</span>
               </div>
               {repo.risk_trend && (
                 <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-2)' }}>
                   Trend: {repo.risk_trend}
                 </div>
               )}
-              <div className="repo-date">Registered {repo.registered_at?.slice(0, 10) || 'unknown'}</div>
+              <div className="repo-date">
+                {repo.registered_at ? `Registered ${repo.registered_at.slice(0, 10)}` : `${repo.role} corpus`}
+              </div>
             </div>
           ))}
         </div>

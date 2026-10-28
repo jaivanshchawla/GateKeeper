@@ -9,7 +9,6 @@ with a mocked model to avoid needing a real MLflow model.
 import os
 import sys
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -199,6 +198,51 @@ class TestPredictEndpoint:
         response = client.post("/predict", json=valid_payload)
         data = response.json()
         assert data["commit_hash"] == "abc123def456"
+
+
+class TestRepoEndpoints:
+    """The repo list serves declarations and measurements, never plausible constants.
+
+    Each row used to carry a remote URL built from the name
+    (``github.com/{name}/{name}``), a fixed ``registered_at`` of 2024-07-01 and
+    a ``last_score`` of "low" for every repository. These tests pin the fields
+    to the registry and mined data, and fail if a fabricated default returns.
+    """
+
+    def test_remote_url_is_the_registry_clone_url(self, client):
+        from registry import load
+
+        declared = {repo.name: repo.url for repo in load()}
+        rows = client.get("/repos").json()
+        assert rows, "no declared repository is checked out, so /repos is untested"
+        for row in rows:
+            assert row["remote_url"] == declared[row["name"]]
+
+    def test_unmeasured_fields_are_null_not_invented(self, client):
+        # The test client has no Postgres, so enrollment and open-issue counts
+        # are unknown. Unknown must read as null, not as "0 issues" or a date.
+        for row in client.get("/repos").json():
+            assert row["registered_at"] is None
+            assert row["open_issues"] is None
+            assert row["latest_band"] in (None, "low", "medium", "high")
+
+    def test_latest_band_uses_the_repository_thresholds(self, client):
+        from api.main import THRESHOLDS, _band_for
+
+        assert THRESHOLDS["kafka"]["high"] > THRESHOLDS["django"]["high"]
+        mid = THRESHOLDS["django"]["high"]
+        assert _band_for("django", mid) == "high"
+        assert _band_for("kafka", mid) == "medium"
+
+    def test_repo_detail_uses_the_registry_and_unknown_repo_is_404(self, client):
+        from registry import load
+
+        repo = load()[0]
+        body = client.get(f"/repos/{repo.name}").json()
+        assert body["repo"]["remote_url"] == repo.url
+        assert body["repo"]["role"] == repo.role
+        assert "registered_at" not in body["repo"]
+        assert client.get("/repos/not-a-declared-repo").status_code == 404
 
 
 class TestModelNotLoaded:

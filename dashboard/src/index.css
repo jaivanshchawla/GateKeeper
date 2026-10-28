@@ -149,6 +149,8 @@ a:hover { text-decoration: underline; }
 .band-dot.high, .status-badge.high { background: var(--risk-high); color: white; }
 .band-dot.medium, .status-badge.medium { background: var(--risk-med); color: #1a1a2e; }
 .band-dot.low, .status-badge.low { background: var(--risk-low); color: #1a1a2e; }
+/* No mined score for this repository: neutral, never a green "safe" badge. */
+.status-badge.unscored { background: var(--surface-3); color: var(--text-2); }
 .status-badge {
   display: inline-block; padding: var(--sp-1) var(--sp-3);
   border-radius: 9999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase;

@@ -527,62 +527,177 @@ def _get_db():
         return None
 
 
+def _band_for(repo_name: str, score: float) -> str:
+    """Band a score with that repository's own cutoffs.
+
+    ``THRESHOLDS`` is the parsed ml/config.yaml. The dashboard route used to
+    read the same file with ``json.loads``, which always raised and left every
+    repository banded by the global cutoffs without a word.
+    """
+    cutoffs = THRESHOLDS.get(repo_name) or DEFAULT_THRESHOLDS
+    high = cutoffs.get("high", DEFAULT_THRESHOLDS["high"])
+    medium = cutoffs.get("medium", DEFAULT_THRESHOLDS["medium"])
+    if score >= high:
+        return "high"
+    if score >= medium:
+        return "medium"
+    return "low"
+
+
+def _oow_scores(repo_name: str) -> list[dict]:
+    """The mined out-of-window scores for a repository, newest first."""
+    path = DATA_DIR / f"u69_{repo_name}_oow.json"
+    if not path.exists():
+        return []
+    try:
+        return list(_json.loads(path.read_text()).get("scores") or [])
+    except (OSError, ValueError) as exc:
+        import logging
+        logging.getLogger("gatekeeper.api").warning(
+            "ignoring unreadable %s: %s", path.name, exc
+        )
+        return []
+
+
+def _training_commit_counts() -> dict[str, int]:
+    """Commits per repository in the mined training corpus."""
+    csv_path = DATA_DIR / "commit_features.csv"
+    if not csv_path.exists():
+        return {}
+    import pandas as pd
+    try:
+        df = pd.read_csv(csv_path, usecols=["source_repo"])
+    except (OSError, ValueError) as exc:
+        import logging
+        logging.getLogger("gatekeeper.api").warning(
+            "ignoring unreadable %s: %s", csv_path.name, exc
+        )
+        return {}
+    return {str(k): int(v) for k, v in df["source_repo"].value_counts().items()}
+
+
+def _enrollment(db) -> tuple[dict, dict]:
+    """Postgres enrollment rows and open-issue counts, keyed by repo name.
+
+    Empty dicts when there is no database. Both are measurements; the route
+    must not substitute a plausible constant for either.
+    """
+    if not db:
+        return {}, {}
+    try:
+        from sqlalchemy import func
+
+        from webhook.models import Issue
+        from webhook.models import Repo as RepoRecord
+        enrolled = {row.name: row for row in db.query(RepoRecord).all()}
+        counts = dict(
+            db.query(Issue.repo, func.count(Issue.id))
+            .filter(Issue.status == "open")
+            .group_by(Issue.repo)
+            .all()
+        )
+        return enrolled, counts
+    except Exception as exc:
+        import logging
+        logging.getLogger("gatekeeper.api").warning(
+            "repo enrollment unavailable: %s: %s", type(exc).__name__, exc
+        )
+        return {}, {}
+
+
 @app.get("/repos")
-async def list_repos():
-    """List all repos with summary stats."""
+# Sync on purpose: this reads CSVs and JSON from disk, and FastAPI runs a
+# `def` handler in its worker thread instead of stalling the event loop.
+def list_repos():
+    """Declared repositories with the stats that can actually be measured.
+
+    Three fields used to be invented per row: ``remote_url`` was built from the
+    name (``github.com/{name}/{name}``), ``registered_at`` was always
+    2024-07-01, and ``last_score`` was always "low" regardless of the model.
+    Now the registry supplies the declaration, Postgres supplies enrollment and
+    issue counts when it is reachable, and the mined scores supply the latest
+    band. Anything unmeasured is null rather than a plausible-looking default.
+    """
     db = _get_db()
-    repos_out = []
-    for name in REPO_NAMES:
-        rp = REPO_MAP[name]
-        if not rp.exists():
-            continue
-        # Count commits scored from OOW data or training CSV
-        n_commits = 0
-        total_issues = 0
-        oow_path = DATA_DIR / f"u69_{name}_oow.json"
-        if oow_path.exists():
-            try:
-                oow = _json.loads(oow_path.read_text())
-                n_commits = oow.get("n_commits", 0)
-            except Exception:
-                pass
-        # Count training commits
-        csv_path = DATA_DIR / "commit_features.csv"
-        if csv_path.exists():
-            import pandas as pd
-            try:
-                df = pd.read_csv(csv_path, usecols=["source_repo"])
-                n_commits += len(df[df["source_repo"] == name])
-            except Exception:
-                pass
-        # Get risk_trend from OOW scores
-        risk_trend = ""
-        if oow_path.exists():
-            try:
-                oow = _json.loads(oow_path.read_text())
-                scores = oow.get("scores", [])
-                if scores:
-                    recent = scores[:10]
-                    recent_avg = sum(s["score"] for s in recent) / len(recent)
-                    risk_trend = f"Recent avg: {recent_avg:.3f}"
-            except Exception:
-                pass
-        repos_out.append({
-            "id": name,
-            "name": name,
-            "remote_url": f"https://github.com/{name}/{name}",
-            "open_issues": total_issues,
-            "total_commits": n_commits,
-            "last_score": "low",
-            "risk_trend": risk_trend,
-            "registered_at": "2024-07-01T00:00:00",
-        })
+    enrolled, issue_counts = _enrollment(db)
     if db:
         try:
             db.close()
         except Exception:
             pass
+    training_counts = _training_commit_counts()
+
+    repos_out = []
+    for repo in _DECLARED_REPOS:
+        if not repo.path.exists():
+            continue
+        scores = _oow_scores(repo.name)
+        record = enrolled.get(repo.name)
+        latest = scores[0] if scores else None
+        risk_trend = ""
+        if scores:
+            recent = scores[:10]
+            risk_trend = f"Recent avg: {sum(s['score'] for s in recent) / len(recent):.3f}"
+        repos_out.append({
+            "id": repo.name,
+            "name": repo.name,
+            "remote_url": repo.url,
+            "role": repo.role,
+            "description": repo.description,
+            "open_issues": issue_counts.get(repo.name),
+            "total_commits": len(scores) + training_counts.get(repo.name, 0),
+            "latest_band": _band_for(repo.name, latest["score"]) if latest else None,
+            "risk_trend": risk_trend,
+            "registered_at": record.registered_at.isoformat() if record else None,
+        })
     return repos_out
+
+
+_TRUSTED_SKOPS = (
+    "collections.OrderedDict", "lightgbm.basic.Booster",
+    "lightgbm.sklearn.LGBMClassifier", "numpy.dtype",
+    "numpy.ndarray", "pandas.core.frame.DataFrame",
+    "pandas.core.series.Series",
+)
+
+
+def _score_repo_rows(repo_id: str, rdf) -> tuple[list[dict], dict[str, int]]:
+    """Score one repository's mined commits with the deployed model.
+
+    A model that will not load is a 503, not an empty timeline: the exception
+    used to be swallowed, which made a broken model look exactly like a
+    repository with no commits.
+    """
+    model_path = PROJECT_ROOT / "models" / "gatekeeper_risk_model.skops"
+    try:
+        model = sio.loads(model_path.read_bytes(), trusted=list(_TRUSTED_SKOPS))
+    except Exception as exc:
+        raise HTTPException(503, f"risk model unavailable: {exc}") from exc
+
+    commits: list[dict] = []
+    band_counts = {"low": 0, "medium": 0, "high": 0}
+    try:
+        scores = model.predict_proba(rdf[config["feature_columns"]].fillna(0).values)[:, 1]
+    except Exception as exc:
+        raise HTTPException(503, f"scoring {repo_id} failed: {exc}") from exc
+
+    for i, (_, row) in enumerate(rdf.iterrows()):
+        score = float(scores[i])
+        band = _band_for(repo_id, score)
+        band_counts[band] += 1
+        commits.append({
+            "id": f"{row['hash'][:12]}",
+            "sha": row["hash"],
+            "author": row.get("author", "unknown"),
+            "score": score,
+            "risk_label": band,
+            "timestamp": str(row.get("committer_date", "")),
+            "lines_added": int(row.get("lines_added", 0)),
+            "lines_deleted": int(row.get("lines_deleted", 0)),
+        })
+    # Ascending time: the dashboard reverses what it takes to draw the timeline.
+    commits.sort(key=lambda c: c["timestamp"])
+    return commits, band_counts
 
 
 @app.get("/repos/{repo_id}")
@@ -601,59 +716,16 @@ def get_repo(repo_id: str):
     commits = []
     band_counts = {"low": 0, "medium": 0, "high": 0}
     csv_path = DATA_DIR / "commit_features.csv"
-    config_path = PROJECT_ROOT / "ml" / "config.yaml"
-    thresholds = DEFAULT_THRESHOLDS
-    if config_path.exists():
-        try:
-            cfg = _json.loads(Path(config_path).read_text())
-            thr = cfg.get("thresholds", {}).get(repo_id, DEFAULT_THRESHOLDS)
-            thresholds = thr
-        except Exception:
-            pass
 
     if csv_path.exists():
         import pandas as pd
         try:
             df = pd.read_csv(csv_path)
-            rdf = df[df["source_repo"] == repo_id].copy()
-            # Load model to score
-            model_path = str(PROJECT_ROOT / "models" / "gatekeeper_risk_model.skops")
-            trusted = [
-                "collections.OrderedDict", "lightgbm.basic.Booster",
-                "lightgbm.sklearn.LGBMClassifier", "numpy.dtype",
-                "numpy.ndarray", "pandas.core.frame.DataFrame",
-                "pandas.core.series.Series",
-            ]
-            try:
-                model = sio.loads(open(model_path, "rb").read(), trusted=trusted)
-                fcols = config.get("feature_columns", [])
-                X = rdf[fcols].fillna(0).values
-                scores = model.predict_proba(X)[:, 1]
-                for i, (_, row) in enumerate(rdf.iterrows()):
-                    score = float(scores[i])
-                    if score >= thresholds.get("high", 0.8619):
-                        band = "high"
-                    elif score >= thresholds.get("medium", 0.7536):
-                        band = "medium"
-                    else:
-                        band = "low"
-                    band_counts[band] += 1
-                    commits.append({
-                        "id": f"{row['hash'][:12]}",
-                        "sha": row["hash"],
-                        "author": row.get("author", "unknown"),
-                        "score": score,
-                        "risk_label": band,
-                        "timestamp": str(row.get("committer_date", "")),
-                        "lines_added": int(row.get("lines_added", 0)),
-                        "lines_deleted": int(row.get("lines_deleted", 0)),
-                    })
-                # Sort by score descending for timeline
-                commits.sort(key=lambda c: c.get("timestamp", ""))
-            except Exception:
-                pass
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            raise HTTPException(503, f"training corpus unreadable: {exc}") from exc
+        rdf = df[df["source_repo"] == repo_id].copy()
+        if not rdf.empty:
+            commits, band_counts = _score_repo_rows(repo_id, rdf)
     # File hotspots from git log
     hotspots = []
     try:
@@ -672,12 +744,14 @@ def get_repo(repo_id: str):
     except Exception:
         pass
 
+    declared = next(r for r in _DECLARED_REPOS if r.name == repo_id)
     return {
         "repo": {
             "id": repo_id,
             "name": repo_id,
-            "remote_url": f"https://github.com/{repo_id}/{repo_id}",
-            "registered_at": "2024-07-01T00:00:00",
+            "remote_url": declared.url,
+            "role": declared.role,
+            "description": declared.description,
         },
         "commits": commits[:100],
         "band_counts": band_counts,
