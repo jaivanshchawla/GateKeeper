@@ -1,0 +1,49 @@
+# The repository registry -- the only place a repository is declared.
+#
+# Every runtime list (API /repos and /budget, both dataset builders, both
+# feature pipelines, the retraining DAG's default arguments and the tests that
+# iterate repositories) reads this file through `registry/__init__.py`. Do not
+# write repository names out by hand anywhere else; tests/test_registry.py
+# fails when a module does.
+#
+# To add a repository: clone it under `clone_dir`, declare it here, and run
+# `python -m scripts.ci.verify_all`. `role` decides how it is used:
+#
+#   train     -- mined into the training corpus and scored by the model
+#   validate  -- scored but never trained on (out-of-distribution check)
+#   holdout   -- reserved for the final evaluation only
+#
+# `url` must be an https:// clone URL, `clone_dir` must stay inside the
+# project, and the pair (name, clone_dir) must be unique.
+schema_version: 1
+
+repos:
+  - name: django
+    url: https://github.com/django/django.git
+    clone_dir: repos/django
+    role: train
+    description: Python web framework; the corpus's largest Python signal.
+
+  - name: react
+    url: https://github.com/facebook/react.git
+    clone_dir: repos/react
+    role: train
+    description: JavaScript UI library; JS/JSX change shapes.
+
+  - name: rust
+    url: https://github.com/rust-lang/rust.git
+    clone_dir: repos/rust
+    role: train
+    description: Rust compiler; long-lived, high-churn C-family history.
+
+  - name: kubernetes
+    url: https://github.com/kubernetes/kubernetes.git
+    clone_dir: repos/kubernetes
+    role: train
+    description: Go orchestration platform; heavy review and revert traffic.
+
+  - name: kafka
+    url: https://github.com/apache/kafka.git
+    clone_dir: repos/kafka
+    role: train
+    description: Java event streaming; JVM build and test layout.

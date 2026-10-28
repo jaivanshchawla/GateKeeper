@@ -17,7 +17,8 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from ml.scoring import _load_config, _determine_band
+from ml.scoring import _determine_band, _load_config
+from registry import repo_names
 
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -28,6 +29,12 @@ def training_data():
     if not os.path.exists(csv_path):
         pytest.skip("Training CSV not found")
     return pd.read_csv(csv_path)
+
+
+@pytest.fixture(scope="module")
+def config():
+    with open(os.path.join(REPO_ROOT, "ml", "config.yaml")) as f:
+        return yaml.safe_load(f)
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +58,9 @@ def model():
     )
 
 
-REPOS = ["django", "react", "kafka", "kubernetes", "rust"]
+# The training corpus is whatever the registry declares, so this test follows
+# a newly declared repository instead of silently testing the original five.
+REPOS = list(repo_names(role="train"))
 
 
 def _score_repo(model, training_data, repo, config):
@@ -71,9 +80,8 @@ def _score_repo(model, training_data, repo, config):
 class TestBandCalibration:
     """W5.2: Assert per-repo band shares within 2pp of 10/15/75."""
 
-    def test_high_band_within_2pp_of_10_percent(self, model, training_data, thresholds):
+    def test_high_band_within_2pp_of_10_percent(self, model, training_data, thresholds, config):
         """High band should be ~10% of each repo's training data."""
-        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
         for repo in REPOS:
             _, bands = _score_repo(model, training_data, repo, config)
             total = len(bands)
@@ -81,9 +89,8 @@ class TestBandCalibration:
             assert abs(high_pct - 10.0) <= 2.0, \
                 f"{repo}: high band = {high_pct:.1f}% (expected ~10%, tolerance ±2pp)"
 
-    def test_medium_band_within_2pp_of_15_percent(self, model, training_data, thresholds):
+    def test_medium_band_within_2pp_of_15_percent(self, model, training_data, thresholds, config):
         """Medium band should be ~15% of each repo's training data."""
-        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
         for repo in REPOS:
             _, bands = _score_repo(model, training_data, repo, config)
             total = len(bands)
@@ -91,9 +98,8 @@ class TestBandCalibration:
             assert abs(med_pct - 15.0) <= 2.0, \
                 f"{repo}: medium band = {med_pct:.1f}% (expected ~15%, tolerance ±2pp)"
 
-    def test_low_band_within_2pp_of_75_percent(self, model, training_data, thresholds):
+    def test_low_band_within_2pp_of_75_percent(self, model, training_data, thresholds, config):
         """Low band should be ~75% of each repo's training data."""
-        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
         for repo in REPOS:
             _, bands = _score_repo(model, training_data, repo, config)
             total = len(bands)
@@ -101,9 +107,8 @@ class TestBandCalibration:
             assert abs(low_pct - 75.0) <= 2.0, \
                 f"{repo}: low band = {low_pct:.1f}% (expected ~75%, tolerance ±2pp)"
 
-    def test_prove_can_fail(self, model, training_data, thresholds):
+    def test_prove_can_fail(self, model, training_data, thresholds, config):
         """Prove the test catches a broken threshold by perturbing it."""
-        config = yaml.safe_load(open(os.path.join(REPO_ROOT, "ml", "config.yaml")))
         repo = "django"
         repo_thr = thresholds.get(repo, thresholds.get("_global", {}))
         orig_high = repo_thr.get("high", 0.9)
@@ -111,7 +116,7 @@ class TestBandCalibration:
         # Set an impossibly low high threshold so everything is "high"
         repo_thr["high"] = 0.0
         try:
-            scores, bands = _score_repo(model, training_data, repo, config)
+            _scores, bands = _score_repo(model, training_data, repo, config)
             total = len(bands)
             high_pct = sum(1 for b in bands if b == "high") / total * 100
 

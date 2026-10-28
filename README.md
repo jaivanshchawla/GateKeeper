@@ -205,6 +205,24 @@ Open http://localhost:5000 to view experiment runs, metrics, and the registered 
 | `requirements.txt`  | Python dependencies                          |
 | `docker-compose.yml`| Service definitions (API, webhook, postgres, dashboard) |
 
+## Single sources of truth
+
+Two facts used to be repeated across the codebase. Each is now declared once,
+and a test fails if a module starts writing it out again.
+
+| Fact | Declared in | Read by |
+|------|-------------|---------|
+| Which repositories form the corpus | `registry/repos.yaml` | `/repos`, `/budget`, both dataset builders, both feature pipelines, the retraining DAG's defaults, and the tests that iterate repositories |
+| What the dashboard's metrics are | `artifacts/model_metrics.json`, `artifacts/model_drift.json` | `/model/health`, `/drift`, `/meta/artifacts` |
+
+Adding a repository is one YAML entry plus a clone; `tests/test_registry.py`
+fails if a module writes the list out again, and `python -m scripts.ci.verify_all`
+checks the rest. Regenerating the metrics is `python ml/build_metrics_artifact.py`;
+`--check` is the CI invariant, and `tests/test_artifact_truth.py` fails on a
+served number with no artifact source. Artifact inputs are read from the commit
+(HEAD, with text line endings normalised), so the same artifact validates on a
+Windows checkout and on a Linux runner.
+
 ## Labeling Criteria
 
 A commit is labeled as **risky** (1) if:
@@ -223,6 +241,9 @@ gatekeeper/
 │   ├── config.yaml             # Feature & model configuration
 │   ├── train.py                # Model training + MLflow logging
 │   └── export_model.py         # Export standalone .skops model
+├── registry/
+│   └── repos.yaml              # the only place a repository is declared
+├── artifacts/                  # committed metrics, and the pointer behind every number
 ├── api/
 │   ├── main.py                 # FastAPI prediction service
 │   └── Dockerfile

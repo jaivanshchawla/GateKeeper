@@ -29,33 +29,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ml.extract_features import CommitFeatureExtractor
 
 # ── Configuration ──────────────────────────────────────────────────────
-REPOS = [
-    {
-        "name": "django",
-        "url": "https://github.com/django/django.git",
-        "clone_dir": "repos/django",
-    },
-    {
-        "name": "react",
-        "url": "https://github.com/facebook/react.git",
-        "clone_dir": "repos/react",
-    },
-    {
-        "name": "rust",
-        "url": "https://github.com/rust-lang/rust.git",
-        "clone_dir": "repos/rust",
-    },
-    {
-        "name": "kubernetes",
-        "url": "https://github.com/kubernetes/kubernetes.git",
-        "clone_dir": "repos/kubernetes",
-    },
-    {
-        "name": "kafka",
-        "url": "https://github.com/apache/kafka.git",
-        "clone_dir": "repos/kafka",
-    },
-]
+# The corpus is whatever the registry declares as `role: train`; adding a
+# repository is a YAML edit, not an edit here.
+from registry import repos as registered_repos
+
+REPOS = [repo.as_mapping() for repo in registered_repos(role="train")]
 
 SINCE = "2024-08-15"  # ~2 years ago
 MAX_COMMITS = 3000

@@ -1,5 +1,5 @@
-# ruff: noqa: E402,E701,E702,I001
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """
 M.1: Compute missing features INCREMENTALLY (O(n) per repo) and evaluate.
 
@@ -26,10 +26,12 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "lightgbm", "-q"])
     import lightgbm as lgb
 
+from registry import repo_names
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPOS_DIR = PROJECT_ROOT / "repos"
 DATA_DIR = PROJECT_ROOT / "data"
-REPO_NAMES = ["django", "react", "rust", "kubernetes", "kafka"]
+REPO_NAMES = list(repo_names())
 
 
 def run_git(repo_path: str, args: list[str], timeout: int = 600) -> str:

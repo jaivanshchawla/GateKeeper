@@ -433,8 +433,7 @@ async def get_all_budgets():
     """Get budget status for all repos."""
     from policy.budget import RiskBudget
     budget = RiskBudget()
-    repos = ["django", "react", "kafka", "kubernetes", "rust"]
-    return [s.to_dict() for s in budget.get_all_statuses(repos)]
+    return [s.to_dict() for s in budget.get_all_statuses(REPO_NAMES)]
 
 
 @app.post("/budget/{repo}/record")
@@ -489,8 +488,22 @@ async def simulate(request: SimulateRequest):
 PROJECT_ROOT = Path(__file__).parent.parent
 REPOS_DIR = PROJECT_ROOT / "repos"
 DATA_DIR = PROJECT_ROOT / "data"
-REPO_NAMES = ["django", "react", "kafka", "kubernetes", "rust"]
-REPO_MAP = {n: REPOS_DIR / n for n in REPO_NAMES}
+
+
+def _declared_repos():
+    """The declared repositories, from the registry rather than a literal.
+
+    Imported here rather than at the top because `registry` needs the project
+    root on sys.path, which happens below this file's import block.
+    """
+    from registry import repos as registered
+
+    return registered()
+
+
+_DECLARED_REPOS = _declared_repos()
+REPO_NAMES = [repo.name for repo in _DECLARED_REPOS]
+REPO_MAP = {repo.name: repo.path for repo in _DECLARED_REPOS}
 
 
 def _get_db():

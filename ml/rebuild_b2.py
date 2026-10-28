@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from registry import repos as registered_repos
+
 # ── Paths ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPOS_DIR = PROJECT_ROOT / "repos"
@@ -37,12 +39,11 @@ LABEL_WINDOW_DAYS = 7
 MAX_ROWS_PER_REPO = 2000
 
 # ── Repos ──────────────────────────────────────────────────────────────
+# Declared in registry/repos.yaml. `path` comes from the registry too, so a
+# relocated checkout is not silently re-derived as repos/<name>.
 REPOS = [
-    {"name": "django",      "url": "https://github.com/django/django.git"},
-    {"name": "react",       "url": "https://github.com/facebook/react.git"},
-    {"name": "rust",        "url": "https://github.com/rust-lang/rust.git"},
-    {"name": "kubernetes",  "url": "https://github.com/kubernetes/kubernetes.git"},
-    {"name": "kafka",       "url": "https://github.com/apache/kafka.git"},
+    {"name": repo.name, "url": repo.url, "path": repo.path}
+    for repo in registered_repos(role="train")
 ]
 
 # ── Feature columns (single source of truth from config.yaml) ─────────
@@ -383,7 +384,7 @@ def main():
 
     for r in REPOS:
         name = r["name"]
-        rp = str(REPOS_DIR / name)
+        rp = str(r["path"])
 
         # Verify clone
         head_sha = subprocess.check_output(
@@ -446,7 +447,7 @@ def main():
     all_dfs = []
     for r in REPOS:
         name = r["name"]
-        rp = str(REPOS_DIR / name)
+        rp = str(r["path"])
 
         # B2.5: author_prior from full history
         t0 = time.time()

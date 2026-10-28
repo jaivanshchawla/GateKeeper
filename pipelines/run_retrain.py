@@ -31,6 +31,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from registry import urls as registered_urls
+
 # Docker Mount fix is safe to apply at import time (no os.path interaction)
 if sys.platform == "win32":
     import docker as _docker
@@ -109,16 +111,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the Gatekeeper retraining DAG using kfp.local."
     )
-    parser.add_argument("--repo-url", default="https://github.com/django/django.git")
+    declared_urls = registered_urls(role="train")
+    parser.add_argument("--repo-url", default=declared_urls[0])
     parser.add_argument(
         "--repo-urls",
-        default=(
-            "https://github.com/django/django.git,"
-            "https://github.com/facebook/react.git,"
-            "https://github.com/rust-lang/rust.git,"
-            "https://github.com/kubernetes/kubernetes.git,"
-            "https://github.com/apache/kafka.git"
-        ),
+        # From the registry, so the DAG mines exactly the declared corpus.
+        default=",".join(declared_urls),
         help="Comma-separated list of repo URLs for multi-repo mining.",
     )
     parser.add_argument("--since-date", default=_default_since_date())
@@ -270,7 +268,7 @@ def main() -> None:
             print("Production model exported successfully.")
         else:
             print("WARNING: Production model export failed.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort export, never fail a finished run
         print(f"WARNING: Production model export failed: {e}")
     print("=" * 60)
 

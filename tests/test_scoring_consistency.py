@@ -15,22 +15,18 @@ Paths tested:
 Two implementations of this contract is what broke B2.4, O.1, Q-T.
 """
 import json
-import math
 import os
 import sys
-from typing import Any
 from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
 import pytest
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from ml.scoring import evaluate_commit_full, reset_cache
-from rules.base import Severity
-
+from ml.scoring import evaluate_commit_full
+from registry import repo_names
 
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -49,7 +45,7 @@ def sample_commits(config):
         pytest.skip("Training CSV not found")
     df = pd.read_csv(csv_path)
     samples = []
-    for repo in ["django", "react", "kafka", "kubernetes", "rust"]:
+    for repo in repo_names(role="train"):
         rdf = df[df["source_repo"] == repo]
         if len(rdf) == 0:
             continue
@@ -83,22 +79,22 @@ def _parse_files(row):
 
 def _build_kwargs(row):
     """Build keyword arguments for evaluate_commit_full from a CSV row."""
-    return dict(
-        repo_name=row.get("source_repo", ""),
-        commit_hash=row["hash"],
-        author=row.get("author", ""),
-        message=str(row.get("commit_msg", "")),
-        files=_parse_files(row),
-        lines_added=int(row.get("lines_added", 0)),
-        lines_deleted=int(row.get("lines_deleted", 0)),
-        files_touched=int(row.get("files_touched", 0)),
-        is_merge=bool(row.get("is_merge", 0)),
-        hour_of_day=int(row.get("hour_of_day", 12)),
-        day_of_week=int(row.get("day_of_week", 0)),
-        author_prior_commits=int(row.get("author_prior_commits", 0)),
-        file_revert_count_max=int(row.get("file_revert_count_max", 0)),
-        file_prior_changes_max=int(row.get("file_prior_changes_max", 0)),
-    )
+    return {
+        "repo_name": row.get("source_repo", ""),
+        "commit_hash": row["hash"],
+        "author": row.get("author", ""),
+        "message": str(row.get("commit_msg", "")),
+        "files": _parse_files(row),
+        "lines_added": int(row.get("lines_added", 0)),
+        "lines_deleted": int(row.get("lines_deleted", 0)),
+        "files_touched": int(row.get("files_touched", 0)),
+        "is_merge": bool(row.get("is_merge", 0)),
+        "hour_of_day": int(row.get("hour_of_day", 12)),
+        "day_of_week": int(row.get("day_of_week", 0)),
+        "author_prior_commits": int(row.get("author_prior_commits", 0)),
+        "file_revert_count_max": int(row.get("file_revert_count_max", 0)),
+        "file_prior_changes_max": int(row.get("file_prior_changes_max", 0)),
+    }
 
 
 class TestCrossPathConsistency:
@@ -107,7 +103,8 @@ class TestCrossPathConsistency:
     def test_direct_vs_api_predict(self, config, sample_commits):
         """Path 1 (direct) vs Path 2 (POST /predict via TestClient)."""
         from fastapi.testclient import TestClient
-        from api.main import app, model
+
+        from api.main import app
 
         # Patch model to pass the guard (scoring uses evaluate_commit_full, not the model)
         with patch("api.main.model", new=object()):
@@ -140,6 +137,7 @@ class TestCrossPathConsistency:
     def test_direct_vs_score_pr(self, config, sample_commits):
         """Path 1 (direct) vs Path 3 (POST /score_pr via TestClient)."""
         from fastapi.testclient import TestClient
+
         from api.main import app
 
         with patch("api.main.model", new=object()):
@@ -183,6 +181,7 @@ class TestCrossPathConsistency:
 
             # Path 4: verify score_pr.py uses the same function
             import importlib
+
             import scripts.score_pr as sp_mod
             importlib.reload(sp_mod)
 
@@ -190,7 +189,7 @@ class TestCrossPathConsistency:
             import inspect
             source = inspect.getsource(sp_mod.main)
             assert "evaluate_commit_full" in source, \
-                f"score_pr.py main() does not call evaluate_commit_full"
+                "score_pr.py main() does not call evaluate_commit_full"
 
             # Format markdown to verify it produces valid output
             markdown = sp_mod.format_markdown(
@@ -212,6 +211,7 @@ class TestCrossPathConsistency:
     def test_rules_identical_across_paths(self, config, sample_commits):
         """Rules from direct call match rules from API for every commit."""
         from fastapi.testclient import TestClient
+
         from api.main import app
 
         client = TestClient(app)
@@ -245,6 +245,7 @@ class TestCrossPathConsistency:
     def test_shap_identical_across_paths(self, config, sample_commits):
         """SHAP top-3 from direct call matches API for every commit."""
         from fastapi.testclient import TestClient
+
         from api.main import app
 
         client = TestClient(app)

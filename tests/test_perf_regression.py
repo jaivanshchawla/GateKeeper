@@ -15,13 +15,18 @@ from datetime import datetime
 
 import pytest
 
-REPO_PATH = "repos/rust"
-SMALL_REPOS = ["repos/django", "repos/react", "repos/kafka"]
+from registry import clone_dir
+
+# Which clones to measure is a selection; where they live comes from the
+# registry, so a relocated checkout is measured in place.
+REPO_PATH = str(clone_dir("rust"))
+SMALL_REPO_NAMES = ("django", "react", "kafka")
+SMALL_REPOS = [str(clone_dir(name)) for name in SMALL_REPO_NAMES]
 
 # A performance number means nothing without the clone it was measured on, and
 # repos/ is gitignored: this module skips -- naming the repositories -- rather
 # than erroring on a machine that has never cloned them.
-pytestmark = pytest.mark.needs_repos("rust", "django", "react", "kafka")
+pytestmark = pytest.mark.needs_repos(*(('rust',) + SMALL_REPO_NAMES))
 
 # Performance targets (seconds)
 RUST_SINGLE_WARM_MAX = 2.0   # single commit, snapshot loaded

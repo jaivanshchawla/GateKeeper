@@ -18,13 +18,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from registry import repo_names
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPOS_DIR = PROJECT_ROOT / "repos"
 DATA_DIR = PROJECT_ROOT / "data"
 
 WINDOW_START = "2024-07-01"
 WINDOW_END = "2026-07-07"  # forward look for graph
-REPO_NAMES = ["django", "react", "rust", "kubernetes", "kafka"]
+REPO_NAMES = list(repo_names())
 
 
 def build_graph_old(repo_path, since, until):
