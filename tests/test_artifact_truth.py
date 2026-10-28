@@ -167,6 +167,62 @@ def test_artifacts_regenerate_identically():
     )
 
 
+def test_text_inputs_hash_the_same_with_crlf_and_lf(monkeypatch, tmp_path):
+    """CI checks these files out with different line endings than Windows does.
+
+    Hashing the raw bytes made the committed artifact match the machine that
+    built it and fail on two of the three runners, for a reason that had
+    nothing to do with the data.
+    """
+    monkeypatch.setattr(artifact_store, "PROJECT_ROOT", tmp_path)
+    (tmp_path / "lf.json").write_bytes(b'{"metric": 1}\n')
+    (tmp_path / "crlf.json").write_bytes(b'{"metric": 1}\r\n')
+
+    assert artifact_store.input_sha256("lf.json") == artifact_store.input_sha256(
+        "crlf.json"
+    )
+
+
+def test_binary_inputs_are_hashed_byte_for_byte(monkeypatch, tmp_path):
+    """Normalisation is for text; a model blob's bytes are the model."""
+    monkeypatch.setattr(artifact_store, "PROJECT_ROOT", tmp_path)
+    (tmp_path / "model.bin").write_bytes(b"\r\n")
+    assert artifact_store.input_sha256("model.bin") == artifact_store.sha256_file(
+        tmp_path / "model.bin"
+    )
+
+
+def test_tracked_inputs_are_read_from_the_commit(monkeypatch, tmp_path):
+    """A dirty work tree must not change what the artifact claims to describe.
+
+    The repository's model blob is modified on a developer machine (retrained,
+    not committed). Hashing the work tree made the committed artifact stale in
+    CI while passing locally -- the exact inversion of a useful check.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "data.json").write_text('{"metric": 1}\n', encoding="utf-8")
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q")
+    git("add", "data.json")
+    git(
+        "-c", "user.name=t", "-c", "user.email=t@example.com",
+        "commit", "-q", "-m", "fixture",
+    )
+
+    monkeypatch.setattr(artifact_store, "PROJECT_ROOT", repo)
+    committed = artifact_store.input_sha256("data.json")
+
+    (repo / "data.json").write_text('{"metric": 999}\n', encoding="utf-8")
+    assert artifact_store.input_sha256("data.json") == committed
+    assert artifact_store.sha256_file(repo / "data.json") != committed
+
+
 def test_stale_input_is_detected(monkeypatch, tmp_path):
     """The detector must notice a changed input, not just a missing one."""
     (tmp_path / "input.txt").write_text("changed", encoding="utf-8")

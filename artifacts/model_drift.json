@@ -3,7 +3,7 @@
   "generator": "ml/build_metrics_artifact.py",
   "source": {
     "path": "data/drift_results.json",
-    "sha256": "fafb622b0fb8240c98001b02bfc07eb0042f0af2593d05740568ecedec6ea642"
+    "sha256": "ecad2885e142bda46af35e2ee4f9f04fc19eebc65fbb7c98c30d364ba91c4b2a"
   },
   "evidently_generated_at": "2026-08-25T10:15:15.788269",
   "repos": {
@@ -70,8 +70,8 @@
   },
   "inputs": {
     "data/drift_results.json": {
-      "sha256": "fafb622b0fb8240c98001b02bfc07eb0042f0af2593d05740568ecedec6ea642",
-      "bytes": 1707
+      "sha256": "ecad2885e142bda46af35e2ee4f9f04fc19eebc65fbb7c98c30d364ba91c4b2a",
+      "bytes": 1643
     }
   },
   "warnings": [

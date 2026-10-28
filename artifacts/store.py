@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,12 +56,68 @@ class InputChanged(ArtifactError):
 
 
 def sha256_file(path: str | Path) -> str:
-    """Hex sha256 of a file, streamed so large model blobs stay cheap."""
+    """Hex sha256 of a file's working-tree bytes, streamed for large blobs."""
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+# Text inputs are hashed with normalised line endings. Git checks these files
+# out with the platform's line endings, so hashing the raw bytes made an
+# artifact valid on the machine that built it and stale on the other two CI
+# runners -- a check that fails for the operating system, not the data.
+TEXT_SUFFIXES = frozenset({".csv", ".html", ".json", ".md", ".txt", ".yaml", ".yml"})
+
+
+def is_text_input(relative: str | Path) -> bool:
+    """Whether an input is a text file whose line endings are incidental."""
+    return Path(relative).suffix.lower() in TEXT_SUFFIXES
+
+
+def canonical_text(data: bytes) -> bytes:
+    """LF line endings, so a Windows and a Linux checkout hash identically."""
+    return data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def committed_bytes(relative: str) -> bytes | None:
+    """A tracked input's content at HEAD, or None when it is not tracked there.
+
+    An artifact is committed, so it has to describe the *committed* inputs. The
+    first version read the working tree, which meant a locally modified model
+    blob, or a file git had just checked out with CRLF, made the same artifact
+    look stale everywhere except the machine that generated it. Reading HEAD
+    makes the artifact a function of the commit, which is what a fresh
+    checkout -- and therefore CI -- can reproduce.
+    """
+    result = subprocess.run(
+        ["git", "cat-file", "blob", f"HEAD:{relative}"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def read_input(relative: str) -> bytes:
+    """An input's content: committed at HEAD when tracked, else the work tree."""
+    committed = committed_bytes(relative)
+    if committed is not None:
+        return committed
+    return (PROJECT_ROOT / relative).read_bytes()
+
+
+def digest_bytes(relative: str, data: bytes) -> str:
+    """Hex sha256 of an input, with text line endings normalised."""
+    if is_text_input(relative):
+        data = canonical_text(data)
+    return hashlib.sha256(data).hexdigest()
+
+
+def input_sha256(relative: str) -> str:
+    """The digest an artifact records for an input (see :func:`read_input`)."""
+    return digest_bytes(relative, read_input(relative))
 
 
 def _escape(token: str) -> str:
@@ -249,11 +306,10 @@ def input_drift(artifact: Artifact) -> list[dict]:
     problems: list[dict] = []
     for relative, recorded in (artifact.payload.get("inputs") or {}).items():
         expected = recorded.get("sha256") if isinstance(recorded, dict) else recorded
-        path = PROJECT_ROOT / relative
-        if not path.exists():
-            problems.append({"input": relative, "expected": expected, "actual": None})
-            continue
-        actual = sha256_file(path)
+        try:
+            actual = input_sha256(relative)
+        except FileNotFoundError:
+            actual = None
         if expected and actual != expected:
             problems.append({"input": relative, "expected": expected, "actual": actual})
     return problems

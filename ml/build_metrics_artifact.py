@@ -34,7 +34,6 @@ Windows checkout rewrites line endings, which says nothing about the data.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -47,7 +46,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from artifacts import SCHEMA_VERSION, write
+from artifacts import SCHEMA_VERSION, digest_bytes, read_input, write
 
 GENERATOR = "ml/build_metrics_artifact.py"
 
@@ -79,18 +78,26 @@ _CARD_OOW = re.compile(
 
 
 def _read_bytes(relative: str) -> bytes:
-    path = PROJECT_ROOT / relative
-    if not path.is_file():
+    """Read an input as the *repository* holds it, not as this work tree does.
+
+    `artifacts.read_input` prefers HEAD and normalises text line endings, so
+    the artifact is a function of the commit: CI on Linux, a Windows checkout
+    with CRLF files and a laptop with an uncommitted model rebuild the same
+    bytes. Reading the work tree made all three disagree.
+    """
+    try:
+        return read_input(relative)
+    except FileNotFoundError:
         raise SystemExit(
             f"error: {relative} is required to build the metric artifact but is "
-            "not present. This file is committed, so a clean checkout has it; "
-            "run `git status` to see whether it was deleted."
-        )
-    return path.read_bytes()
+            "neither committed at HEAD nor present in the work tree. This file "
+            "is normally committed; run `git status` to see whether it was "
+            "deleted."
+        ) from None
 
 
 def _sha256(relative: str) -> str:
-    return hashlib.sha256(_read_bytes(relative)).hexdigest()
+    return digest_bytes(relative, _read_bytes(relative))
 
 
 def _json(relative: str) -> Any:
@@ -104,7 +111,7 @@ def _inputs(*relatives: str) -> dict[str, dict]:
     return {
         relative: {
             "sha256": _sha256(relative),
-            "bytes": (PROJECT_ROOT / relative).stat().st_size,
+            "bytes": len(_read_bytes(relative)),
         }
         for relative in relatives
     }
@@ -217,7 +224,7 @@ def build_model_metrics() -> dict:
             )
 
     model_bytes = _read_bytes(MODEL_SOURCE)
-    model_sha = hashlib.sha256(model_bytes).hexdigest()
+    model_sha = digest_bytes(MODEL_SOURCE, model_bytes)
 
     training_commits = sum(
         int((repo_data or {}).get("sampled_rows", 0))

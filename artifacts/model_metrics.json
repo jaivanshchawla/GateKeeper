@@ -2,9 +2,9 @@
   "schema_version": 1,
   "generator": "ml/build_metrics_artifact.py",
   "model": {
-    "version": "skops-6cc7a64a9579",
-    "sha256": "6cc7a64a9579f3bbed393a4fe6f2a3fb79ab409fdcda4728189c61fd99ec1d0c",
-    "bytes": 389411,
+    "version": "skops-94ddb93e7918",
+    "sha256": "94ddb93e7918ae951a3d6b492314c69db8847b939b578b28826de50f9078ca7e",
+    "bytes": 388027,
     "path": "models/gatekeeper_risk_model.skops"
   },
   "metrics": {
@@ -115,32 +115,32 @@
   },
   "inputs": {
     "data/dataset_manifest.json": {
-      "sha256": "7f138b86a6d850575c795b925650717740c8a24445a0affb7b23851dc3a8c99a",
-      "bytes": 1944
+      "sha256": "3a5c855ab3fafeaeae934399756af15c046f7ee210c16f9c9fd103120d574200",
+      "bytes": 1887
     },
     "data/p3_p4_results.json": {
-      "sha256": "094547f57e14e24466fca08173c85f3c9b84598948063509c1666861a63125ee",
-      "bytes": 2271
+      "sha256": "3edaad456187a7bf78410390a11cb8eadc865b24c8ae7ae353305cb9b7d3a732",
+      "bytes": 2198
     },
     "data/w72_django.json": {
-      "sha256": "1d34de021bb77c454e1dae50cfc5ad6937b4792a3d3efaea406c3281dddc032c",
-      "bytes": 742
+      "sha256": "e06f2efed720bfdd6fd51cc485030ee131d5a1da57fa0f5d61663c09257f77fa",
+      "bytes": 699
     },
     "data/w72_kafka.json": {
-      "sha256": "b284a11f094c50965fc33e819e57bda28b8cbd542ccb44bfd8261536b4f6497c",
-      "bytes": 772
+      "sha256": "59619bbcbfd97089ce6a27d65464147dbf8f68857f9b88f3123e2e417a6babd6",
+      "bytes": 729
     },
     "data/w72_kubernetes.json": {
-      "sha256": "7ec23126cb284ba520bc005daaf7232f4dac48e1c276b6e64dcb016fd371dc3d",
-      "bytes": 775
+      "sha256": "5732dc8194a7743f7612932f61b1b3be32b3f944d44aaaec771b86a125bd33dd",
+      "bytes": 732
     },
     "data/w72_react.json": {
-      "sha256": "7ab80c1d2b21efa3c93621f484ccf19fd5419666f2aae0783119a884255c4b42",
-      "bytes": 758
+      "sha256": "106ad3347069de29f4eb10142ec78c6fed556ce6bf3340207d9d6f2e474ab32d",
+      "bytes": 715
     },
     "data/w72_rust.json": {
-      "sha256": "63ba6e306a4d1b3dd1c78da339b6949542c5cc360c8121696887e86646d9c955",
-      "bytes": 783
+      "sha256": "319a5b8cedeb436e061498d7ffd2d13122f0e1313cb5ff3fd949c24db9108ede",
+      "bytes": 740
     },
     "governance/model_card.md": {
       "sha256": "428f123bbe359994b5ba2d80e8ec5ce88463e9dc8dea57efd92896ec63ba07f7",
@@ -151,8 +151,8 @@
       "bytes": 1986
     },
     "models/gatekeeper_risk_model.skops": {
-      "sha256": "6cc7a64a9579f3bbed393a4fe6f2a3fb79ab409fdcda4728189c61fd99ec1d0c",
-      "bytes": 389411
+      "sha256": "94ddb93e7918ae951a3d6b492314c69db8847b939b578b28826de50f9078ca7e",
+      "bytes": 388027
     }
   },
   "warnings": [
