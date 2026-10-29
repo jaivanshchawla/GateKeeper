@@ -324,7 +324,8 @@ def test_data_reading_tests_declare_what_they_need():
         guarded = "pytest.skip(" in text or "importorskip(" in text
         if "commit_features.csv" in text and "needs_data" not in markers and not guarded:
             offenders.append(f"{path.name}: reads the training CSV")
-        if "repos/" in text and "needs_repos" not in markers and not guarded:
+        # A clone is read as `repos/<name>`, never as the HTTP route `/repos/…`.
+        if re.search(r"(?<![/\w])repos/", text) and "needs_repos" not in markers and not guarded:
             offenders.append(f"{path.name}: reads a clone under repos/")
     assert not offenders, (
         "these tests read inputs a fresh clone does not have and neither declare "
