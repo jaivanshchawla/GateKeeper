@@ -330,3 +330,35 @@ def test_no_hardcoded_metric_values_remain_in_the_api():
         assert literal not in source, (
             f"{literal} is a stale claim; serve it from an artifact instead"
         )
+
+
+@pytest.mark.parametrize(
+    "route, projection",
+    [
+        ("model_health", "model_health"),
+        ("drift_status", "drift_status"),
+        ("artifact_manifest", "artifact_manifest"),
+    ],
+)
+def test_a_broken_artifact_is_a_503_not_a_500(monkeypatch, route, projection):
+    """A malformed artifact must reach the client as "unavailable", not a crash.
+
+    The routes caught ``ArtifactError`` but FastAPI only turns ``HTTPException``
+    into a response; without the mapping a corrupt artifact surfaced as an
+    opaque 500 and the dashboard showed a generic failure.
+    """
+    import asyncio
+
+    from fastapi import HTTPException
+
+    import api.main as api_main
+    from artifacts import views
+
+    def explode():
+        raise artifact_store.InvalidArtifact("corrupt.json: not valid JSON")
+
+    monkeypatch.setattr(views, projection, explode)
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(getattr(api_main, route)())
+    assert excinfo.value.status_code == 503
+    assert "unavailable" in excinfo.value.detail
