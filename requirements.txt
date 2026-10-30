@@ -24,6 +24,10 @@ feast
 tensorflow
 keras
 prometheus-fastapi-instrumentator
+# Clerk session verification: auth/clerk.py imports jwt directly. It was in
+# api/requirements-slim.txt (the image) but not here, so the CI suite -- which
+# installs this file -- failed on ModuleNotFoundError: No module named 'jwt'.
+pyjwt[crypto]
 fairlearn
 joblib
 shap
