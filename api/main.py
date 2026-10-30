@@ -248,6 +248,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Clerk session authentication. Off unless GATEKEEPER_AUTH_MODE=on or a
+# CLERK_* variable is set, so local runs and the test suite need no credentials;
+# a misconfigured deployment fails here at import rather than serving anonymous
+# requests. Configured before the routes so the middleware wraps all of them.
+from auth import configure as _configure_auth
+
+AUTH_SETTINGS = _configure_auth(app)
+
 # Prometheus metrics — exposed at /metrics
 if Instrumentator is not None:
     Instrumentator().instrument(app).expose(app)
