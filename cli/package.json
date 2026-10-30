@@ -1,21 +1,45 @@
 {
   "name": "gatekeeper-cli",
-  "version": "1.0.0",
-  "description": "CLI for Gatekeeper — ML-powered commit risk scoring with deterministic rules",
+  "version": "1.1.0",
+  "description": "ML commit-risk scoring for every push: installs a pre-push gate, scores unpushed commits with a risk model, and explains why",
   "type": "module",
   "main": "src/index.js",
   "bin": {
     "gatekeeper": "src/index.js"
   },
+  "files": [
+    "src/",
+    "README.md"
+  ],
   "scripts": {
-    "test": "node --test src/**/*.test.js"
+    "test": "node --test",
+    "prepublishOnly": "npm test"
   },
-  "keywords": ["mlops", "commit-risk", "code-quality", "pre-push", "git-hook"],
-  "license": "MIT",
+  "keywords": [
+    "mlops",
+    "commit-risk",
+    "code-quality",
+    "pre-push",
+    "git-hook",
+    "clerk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaivanshchawla/GateKeeper.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/jaivanshchawla/GateKeeper#readme",
+  "bugs": {
+    "url": "https://github.com/jaivanshchawla/GateKeeper/issues"
+  },
   "dependencies": {
     "yaml": "^2.4.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

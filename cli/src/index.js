@@ -1,604 +1,87 @@
 #!/usr/bin/env node
 /**
- * Gatekeeper CLI — ML-powered commit risk scoring with deterministic rules.
+ * Gatekeeper CLI — commit risk scoring from the command line.
  *
- * Commands:
- *   gatekeeper init       Install pre-push hook, write .gatekeeper.yml
- *   gatekeeper check      Score unpushed commits locally
- *   gatekeeper status     Per-repo gate status from dashboard
- *   gatekeeper explain <sha>  Full breakdown for one commit
- *   gatekeeper config     Show effective config
+ * The bin is deliberately thin: parse argv, call a command, exit with its
+ * code. Everything testable lives in the sibling modules.
  */
 
-import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, basename } from 'path';
-import { homedir } from 'os';
-import { parse as parseYaml } from 'yaml';
+import {
+  cmdAuth,
+  cmdCheck,
+  cmdConfig,
+  cmdExplain,
+  cmdInit,
+  cmdStatus,
+  cmdWhoami,
+  version,
+} from './commands.js'
+import { resolveApiUrl } from './api.js'
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function getGitRoot() {
-  try {
-    return execSync('git rev-parse --show-toplevel', { encoding: 'utf-8' }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function getGitRemoteUrl() {
-  try {
-    return execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function getUnpushedCommits() {
-  try {
-    // Use git rev-list to avoid shell escaping issues with ^
-    // Get remote branch name
-    let remoteBranch = '';
-    try {
-      remoteBranch = execSync('git rev-parse --abbrev-ref @{u} 2>/dev/null', { encoding: 'utf-8' }).trim();
-    } catch {
-      try {
-        const branch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
-        remoteBranch = `origin/${branch}`;
-      } catch {}
-    }
-    if (!remoteBranch) {
-      // Fallback: use origin/main or origin/master
-      try {
-        execSync('git rev-parse --verify origin/main 2>/dev/null', { encoding: 'utf-8' });
-        remoteBranch = 'origin/main';
-      } catch {
-        try {
-          execSync('git rev-parse --verify origin/master 2>/dev/null', { encoding: 'utf-8' });
-          remoteBranch = 'origin/master';
-        } catch {}
-      }
-    }
-    const hashes = remoteBranch
-      ? execSync(`git rev-list --oneline ${remoteBranch}..HEAD`, { encoding: 'utf-8' }).trim()
-      : '';
-    if (!hashes) return [];
-    return hashes.split('\n').filter(Boolean).map(hash => {
-      const msg = execSync(`git log -1 --format=%s ${hash}`, { encoding: 'utf-8' }).trim();
-      return { sha: hash, message: msg };
-    });
-  } catch {
-    return [];
-  }
-}
-
-function loadUserConfig() {
-  const configPath = join(homedir(), '.gatekeeper', 'config.json');
-  if (existsSync(configPath)) {
-    return JSON.parse(readFileSync(configPath, 'utf-8'));
-  }
-  return {};
-}
-
-function saveUserConfig(config) {
-  const dir = join(homedir(), '.gatekeeper');
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'config.json'), JSON.stringify(config, null, 2));
-}
-
-function loadRepoConfig(gitRoot) {
-  const configPath = join(gitRoot, '.gatekeeper.yml');
-  if (existsSync(configPath)) {
-    return parseYaml(readFileSync(configPath, 'utf-8'));
-  }
-  return null;
-}
-
-const DEFAULT_CONFIG = {
-  rules: {
-    large_change: { max_lines: 500, severity: 'warn' },
-    too_many_files: { max_files: 20, severity: 'warn' },
-    no_tests: { severity: 'warn', exempt_paths: ['docs/**', '*.md'] },
-    config_and_code: { severity: 'warn' },
-    revert_hotspot: { revert_count: 3, window_days: 60, severity: 'block' },
-    first_touch: { severity: 'info' },
-    weekend_deploy: { severity: 'info' },
-    stale_file: { days: 180, severity: 'info' },
-    direct_to_main: { severity: 'warn' },
-  },
-  ml_scoring: { enabled: true, band_thresholds: { high: 0.90, medium: 0.75 } },
-  fail_on: ['block'],
-};
-
-function getEffectiveConfig(gitRoot) {
-  const repoConfig = loadRepoConfig(gitRoot);
-  if (!repoConfig) return DEFAULT_CONFIG;
-  // Deep merge
-  const merged = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-  if (repoConfig.rules) {
-    for (const [name, cfg] of Object.entries(repoConfig.rules)) {
-      merged.rules[name] = { ...(merged.rules[name] || {}), ...cfg };
-    }
-  }
-  for (const key of ['ml_scoring', 'fail_on']) {
-    if (repoConfig[key]) merged[key] = repoConfig[key];
-  }
-  return merged;
-}
-
-// ── API Client ───────────────────────────────────────────────────────
-
-async function callApi(endpoint, body, userConfig) {
-  const apiUrl = userConfig.api_url || process.env.GATEKEEPER_API_URL;
-  if (!apiUrl) {
-    console.warn('⚠  No API URL configured. Set GATEKEEPER_API_URL or run:');
-    console.warn('   gatekeeper config --api-url https://your-api.render.com');
-    return null;
-  }
-  try {
-    const response = await fetch(`${apiUrl}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) {
-      console.warn(`⚠  API returned ${response.status}: ${response.statusText}`);
-      return null;
-    }
-    return await response.json();
-  } catch (err) {
-    console.warn(`⚠  API unreachable (${err.message}). Failing open — no block.`);
-    return null;
-  }
-}
-
-// ── Commands ─────────────────────────────────────────────────────────
-
-function cmdInit() {
-  const gitRoot = getGitRoot();
-  if (!gitRoot) {
-    console.error('❌ Not inside a git repository.');
-    process.exit(1);
-  }
-
-  // 1. Write .gatekeeper.yml if not present
-  const configPath = join(gitRoot, '.gatekeeper.yml');
-  if (!existsSync(configPath)) {
-    const defaultYaml = `# Gatekeeper configuration
-# See https://github.com/jaivanshchawla/GateKeeper for options
-
-rules:
-  large_change:
-    max_lines: 500
-    severity: warn
-  too_many_files:
-    max_files: 20
-    severity: warn
-  no_tests:
-    severity: warn
-    exempt_paths:
-      - "docs/**"
-      - "*.md"
-  config_and_code:
-    severity: warn
-  revert_hotspot:
-    revert_count: 3
-    window_days: 60
-    severity: block
-  first_touch:
-    severity: info
-  weekend_deploy:
-    severity: info
-  stale_file:
-    days: 180
-    severity: info
-  direct_to_main:
-    severity: warn
-
-ml_scoring:
-  enabled: true
-  band_thresholds:
-    high: 0.90
-    medium: 0.75
-
-fail_on:
-  - block
-`;
-    writeFileSync(configPath, defaultYaml);
-    console.log('✅ Created .gatekeeper.yml');
-  } else {
-    console.log('ℹ  .gatekeeper.yml already exists, skipping.');
-  }
-
-  // 2. Install the pre-push hook — unless a hook manager already owns it.
-  // Git only ever executes one pre-push file, chosen by core.hooksPath.
-  // Writing .git/hooks/pre-push while husky owns core.hooksPath produces a
-  // hook that looks installed and silently never runs.
-  if (detectHookManager(gitRoot)) {
-    console.log('ℹ  husky manages git hooks in this repo — leaving .git/hooks alone.');
-    console.log('   Gate 1 is wired into .husky/pre-push. Install it with: npm install');
-  } else {
-    installPrePushHook(gitRoot);
-  }
-
-  // 3. Register repo with dashboard (local user config)
-  const remoteUrl = getGitRemoteUrl();
-  const userConfig = loadUserConfig();
-  if (remoteUrl) {
-    const repoName = remoteUrl.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '');
-    if (!userConfig.repos) userConfig.repos = {};
-    userConfig.repos[repoName] = {
-      remote_url: remoteUrl,
-      registered_at: new Date().toISOString(),
-    };
-    saveUserConfig(userConfig);
-    console.log(`✅ Registered repo: ${repoName}`);
-  }
-
-  console.log('\n🎯 Gatekeeper initialized. Run `gatekeeper check` to score unpushed commits.');
-}
-
-/**
- * True when something other than .git/hooks owns this repo's hooks.
- * husky works by pointing core.hooksPath at .husky/_, so either signal
- * means a raw .git/hooks/pre-push would be dead code.
- */
-function detectHookManager(gitRoot) {
-  if (existsSync(join(gitRoot, '.husky'))) return true;
-  try {
-    const hooksPath = execSync('git config --get core.hooksPath', {
-      cwd: gitRoot,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return hooksPath.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Fallback for repos without husky: write a self-contained pre-push hook.
- * The script resolves the repo root at run time rather than baking in an
- * absolute path, so the hook survives moving or cloning the checkout.
- */
-function installPrePushHook(gitRoot) {
-  const hookPath = join(gitRoot, '.git', 'hooks', 'pre-push');
-  const hookContent = `#!/bin/sh
-# Gatekeeper pre-push hook
-# Scores outgoing commits and warns on high risk.
-# Skip with: SKIP=gatekeeper-score git push
-#
-# Generated by \`gatekeeper init\`. If husky is installed it owns
-# core.hooksPath and this file is ignored — see .husky/pre-push instead.
-
-if [ "$SKIP" = "gatekeeper-score" ] || [ "$SKIP" = "all" ]; then
-  exit 0
-fi
-
-root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-
-echo "🛡️  Gatekeeper: Scoring outgoing commits..."
-node "$root/cli/src/index.js" check
-exit $?
-`;
-  writeFileSync(hookPath, hookContent);
-  // Make executable (Unix only; no-op on Windows)
-  try { execSync(`chmod +x "${hookPath}"`); } catch {}
-  console.log('✅ Installed pre-push hook');
-}
-
-function cmdCheck() {
-  const gitRoot = getGitRoot();
-  if (!gitRoot) {
-    console.error('❌ Not inside a git repository.');
-    process.exit(1);
-  }
-
-  const commits = getUnpushedCommits();
-  if (commits.length === 0) {
-    console.log('✅ No unpushed commits to score.');
-    return;
-  }
-
-  const config = getEffectiveConfig(gitRoot);
-  const jsonMode = process.argv.includes('--json');
-
-  if (!jsonMode) console.log(`\n🛡️  Gatekeeper: Scoring ${commits.length} unpushed commit(s)...\n`);
-
-  let hasBlock = false;
-  const jsonResults = [];
-
-  for (const { sha, message } of commits) {
-    // Simple local scoring — use git log to extract basic features
-    let filesChanged = [];
-    let linesAdded = 0;
-    let linesDeleted = 0;
-    try {
-      const stats = execSync(`git diff-tree --no-commit-id --numstat ${sha}`, { encoding: 'utf-8' });
-      for (const line of stats.trim().split('\n')) {
-        const parts = line.split('\t');
-        if (parts.length >= 3) {
-          filesChanged.push(parts[2]);
-          linesAdded += parseInt(parts[0]) || 0;
-          linesDeleted += parseInt(parts[1]) || 0;
-        }
-      }
-    } catch {}
-
-    // Local rule checks (deterministic, no API needed)
-    const violations = [];
-    const totalLines = linesAdded + linesDeleted;
-
-    if (totalLines > (config.rules.large_change?.max_lines || 500)) {
-      violations.push({ rule: 'large_change', severity: 'warn', message: `${totalLines} lines changed` });
-    }
-    if (filesChanged.length > (config.rules.too_many_files?.max_files || 20)) {
-      violations.push({ rule: 'too_many_files', severity: 'warn', message: `${filesChanged.length} files touched` });
-    }
-
-    const hasTests = filesChanged.some(f => /test|spec/i.test(f));
-    if (!hasTests && (linesAdded > 0 || linesDeleted > 0)) {
-      violations.push({ rule: 'no_tests', severity: 'warn', message: 'No test files included' });
-    }
-
-    const configPatterns = /\.ya?ml$|\.toml$|\.lock|dockerfile|\.github\/|docker-compose|makefile|\.env/i;
-    const codePatterns = /\.(py|js|ts|jsx|tsx|rs|go|java|c|cpp|h)$/;
-    const hasConfig = filesChanged.some(f => configPatterns.test(f));
-    const hasCode = filesChanged.some(f => codePatterns.test(f));
-    if (hasConfig && hasCode) {
-      violations.push({ rule: 'config_and_code', severity: 'warn', message: 'Touches both config/CI and source code' });
-    }
-
-    const hasBlocker = violations.some(v => v.severity === 'block');
-    if (hasBlocker) hasBlock = true;
-
-    const band = hasBlocker ? 'high' : violations.length > 0 ? 'medium' : 'low';
-
-    // JSON mode: collect structured results
-    jsonResults.push({
-      sha: sha,
-      message: message,
-      band: band,
-      files_changed: filesChanged,
-      lines_added: linesAdded,
-      lines_deleted: linesDeleted,
-      rule_results: violations.map(v => ({
-        rule: v.rule,
-        severity: v.severity,
-        passed: false,
-        message: v.message,
-      })),
-      has_blocker: hasBlocker,
-    });
-
-    // Human-readable mode
-    if (!jsonMode) {
-      const shortSha = sha.slice(0, 8);
-      const shortMsg = message.slice(0, 60);
-      if (violations.length === 0) {
-        console.log(`  ✅ ${shortSha} ${shortMsg}`);
-      } else {
-        const icon = hasBlocker ? '🚫' : '⚠️ ';
-        console.log(`  ${icon} ${shortSha} ${shortMsg}`);
-        for (const v of violations) {
-          const sev = v.severity === 'block' ? 'BLOCK' : v.severity.toUpperCase();
-          console.log(`     [${sev}] ${v.rule}: ${v.message}`);
-        }
-      }
-    }
-  }
-
-  // JSON mode: emit structured output
-  if (jsonMode) {
-    const output = {
-      version: '1.0.0',
-      repo: getGitRemoteUrl()?.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '') || 'unknown',
-      commits: jsonResults,
-      summary: {
-        total: commits.length,
-        passed: jsonResults.filter(r => !r.has_blocker && r.rule_results.length === 0).length,
-        warnings: jsonResults.filter(r => !r.has_blocker && r.rule_results.length > 0).length,
-        blocked: jsonResults.filter(r => r.has_blocker).length,
-      },
-      config: {
-        ml_scoring: config.ml_scoring?.enabled ?? true,
-        fail_on: config.fail_on || ['block'],
-      },
-    };
-    console.log(JSON.stringify(output, null, 2));
-    if (hasBlock && config.fail_on?.includes('block')) {
-      process.exit(1);
-    }
-    return;
-  }
-
-  // Human-readable mode
-  console.log('');
-
-  if (hasBlock && config.fail_on?.includes('block')) {
-    console.log('🚫 Push blocked by Gatekeeper (block-severity rule triggered).');
-    console.log('   Fix the issues above, or skip with: SKIP=gatekeeper-score git push');
-    process.exit(1);
-  }
-
-  console.log(`Done. ${commits.length} commit(s) scored.`);
-}
-
-async function cmdStatus() {
-  const remoteUrl = getGitRemoteUrl();
-  if (!remoteUrl) {
-    console.error('❌ No git remote configured.');
-    process.exit(1);
-  }
-
-  const repoName = remoteUrl.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '');
-  const userConfig = loadUserConfig();
-
-  if (!userConfig.api_url) {
-    console.log(`📦 Repo: ${repoName}`);
-    console.log('ℹ  No API URL configured. Set it with:');
-    console.log('   gatekeeper config --api-url https://your-api.render.com');
-    return;
-  }
-
-  console.log(`🛡️  Gatekeeper status for ${repoName}...\n`);
-  const data = await callApi(`/issues?repo=${encodeURIComponent(repoName)}`, null, userConfig);
-  if (!data) return;
-
-  const issues = Array.isArray(data) ? data : data.issues || [];
-  const open = issues.filter(i => i.status === 'open');
-  const resolved = issues.filter(i => i.status === 'resolved');
-
-  console.log(`  Open issues:     ${open.length}`);
-  console.log(`  Resolved issues: ${resolved.length}`);
-  if (open.length > 0) {
-    console.log('\n  Recent open issues:');
-    for (const issue of open.slice(-5)) {
-      console.log(`    [Gate ${issue.gate}] ${issue.type}: ${issue.details?.slice(0, 80) || 'no details'}`);
-    }
-  }
-}
-
-async function cmdExplain(sha) {
-  if (!sha) {
-    console.error('Usage: gatekeeper explain <commit-sha>');
-    process.exit(1);
-  }
-
-  const gitRoot = getGitRoot();
-  if (!gitRoot) {
-    console.error('❌ Not inside a git repository.');
-    process.exit(1);
-  }
-
-  const userConfig = loadUserConfig();
-  const remoteUrl = getGitRemoteUrl();
-  const repoName = remoteUrl?.replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '') || 'unknown';
-
-  console.log(`\n🛡️  Gatekeeper explain for ${sha.slice(0, 12)}...\n`);
-
-  // Call API for full breakdown
-  const result = await callApi('/explain', {
-    commit_hash: sha,
-    repo: repoName,
-    repo_path: gitRoot,
-  }, userConfig);
-
-  if (result) {
-    console.log(`  Band:    ${result.risk_label?.toUpperCase() || 'unknown'}`);
-    console.log(`  Score:   ${result.risk_score?.toFixed(4) || 'N/A'}`);
-    if (result.explanations?.length) {
-      console.log('\n  Top factors:');
-      for (const exp of result.explanations) {
-        console.log(`    • ${exp.human_readable || exp.description}`);
-      }
-    }
-    if (result.rule_results?.length) {
-      console.log('\n  Rules:');
-      for (const r of result.rule_results) {
-        const icon = r.passed ? '✅' : (r.severity === 'block' ? '🚫' : '⚠️ ');
-        console.log(`    ${icon} [${r.severity}] ${r.rule}: ${r.message}`);
-      }
-    }
-  } else {
-    // Offline fallback: show git log info
-    try {
-      const log = execSync(`git log -1 --format=%H%n%an%n%ai%n%s ${sha}`, { encoding: 'utf-8' });
-      const [hash, author, date, subject] = log.trim().split('\n');
-      console.log(`  Hash:    ${hash?.slice(0, 12)}`);
-      console.log(`  Author:  ${author}`);
-      console.log(`  Date:    ${date}`);
-      console.log(`  Message: ${subject}`);
-
-      const stats = execSync(`git diff-tree --no-commit-id --stat ${sha}`, { encoding: 'utf-8' });
-      console.log(`\n  Changes:\n${stats}`);
-    } catch (err) {
-      console.error(`  ❌ Could not read commit: ${err.message}`);
-    }
-  }
-}
-
-function cmdConfig(args) {
-  const gitRoot = getGitRoot();
-  const userConfig = loadUserConfig();
-
-  if (args.includes('--api-url')) {
-    const idx = args.indexOf('--api-url');
-    const url = args[idx + 1];
-    if (!url) {
-      console.error('Usage: gatekeeper config --api-url <url>');
-      process.exit(1);
-    }
-    userConfig.api_url = url;
-    saveUserConfig(userConfig);
-    console.log(`✅ API URL set to: ${url}`);
-    return;
-  }
-
-  // Show effective config
-  console.log('\n📋 Effective Gatekeeper configuration:\n');
-  if (gitRoot) {
-    const repoConfig = loadRepoConfig(gitRoot);
-    if (repoConfig) {
-      console.log(`  Repo config: ${join(gitRoot, '.gatekeeper.yml')}`);
-    } else {
-      console.log('  Repo config: (none — using defaults)');
-    }
-  }
-
-  const effective = gitRoot ? getEffectiveConfig(gitRoot) : DEFAULT_CONFIG;
-  console.log(`  API URL: ${userConfig.api_url || '(not set)'}`);
-  console.log(`  ML scoring: ${effective.ml_scoring?.enabled ? 'enabled' : 'disabled'}`);
-  console.log(`  Fail on: ${effective.fail_on?.join(', ') || 'block'}`);
-  console.log('\n  Rules:');
-  for (const [name, cfg] of Object.entries(effective.rules)) {
-    const sev = cfg.severity || 'warn';
-    const extra = cfg.max_lines ? ` (max: ${cfg.max_lines})` : cfg.max_files ? ` (max: ${cfg.max_files})` : '';
-    console.log(`    ${name}: ${sev}${extra}`);
-  }
-}
-
-// ── Main ─────────────────────────────────────────────────────────────
-
-const args = process.argv.slice(2);
-const command = args[0];
-
-switch (command) {
-  case 'init':
-    cmdInit();
-    break;
-  case 'check':
-    cmdCheck();
-    break;
-  case 'status':
-    await cmdStatus();
-    break;
-  case 'explain':
-    await cmdExplain(args[1]);
-    break;
-  case 'config':
-    cmdConfig(args.slice(1));
-    break;
-  default:
-    console.log(`
-🛡️  Gatekeeper CLI — ML-powered commit risk scoring
+const USAGE = `
+🛡️  Gatekeeper CLI — ML commit-risk scoring for every push
 
 Usage:
-  gatekeeper init           Install pre-push hook + .gatekeeper.yml
-  gatekeeper check          Score unpushed commits with rules
-  gatekeeper status         Per-repo status from dashboard
-  gatekeeper explain <sha>  Full breakdown for one commit
-  gatekeeper config         Show effective config
+  gatekeeper init                Install the pre-push hook and .gatekeeper.yml
+  gatekeeper check [--json]      Score unpushed commits (rules + model)
+  gatekeeper status              Open findings for this repository
+  gatekeeper explain <sha>       Why one commit scored the way it did
+  gatekeeper config [--api-url <url>]  Show or set configuration
+  gatekeeper auth --token <jwt>  Save a Clerk session token (or --clear)
+  gatekeeper whoami              Show who the API thinks you are
+  gatekeeper --version           Print the CLI version
 
 Environment:
-  GATEKEEPER_API_URL        API endpoint for ML scoring (optional)
+  GATEKEEPER_API_URL   API base URL (or: gatekeeper config --api-url ...)
+  GATEKEEPER_TOKEN     Session token for a Clerk-protected API
+  SKIP=gatekeeper-score  Skip the pre-push hook once
 
 Examples:
-  npx gatekeeper init
-  npx gatekeeper check
-  npx gatekeeper config --api-url https://your-api.render.com
-`);
-    break;
+  npx gatekeeper-cli init
+  npx gatekeeper-cli check --json
+  gatekeeper config --api-url https://gatekeeper.example.com
+`
+
+async function main(argv) {
+  const [command, ...rest] = argv
+
+  switch (command) {
+    case 'init':
+      return cmdInit({})
+    case 'check':
+      return cmdCheck({ argv: rest })
+    case 'status':
+      return cmdStatus({})
+    case 'explain':
+      return cmdExplain(rest[0], {})
+    case 'config':
+      return cmdConfig(rest, {})
+    case 'auth':
+      return cmdAuth(rest, {})
+    case 'whoami':
+      return cmdWhoami({})
+    case '--version':
+    case '-v':
+    case 'version':
+      console.log(version())
+      return 0
+    case '--help':
+    case '-h':
+    case 'help':
+      console.log(USAGE)
+      return 0
+    case undefined:
+      console.log(USAGE)
+      if (!resolveApiUrl()) {
+        console.log('ℹ  No API URL configured yet — `gatekeeper config --api-url <url>` for model scoring.')
+      }
+      return 0
+    default:
+      console.error(`Unknown command: ${command}`)
+      console.log(USAGE)
+      return 1
+  }
 }
+
+const code = await main(process.argv.slice(2))
+process.exitCode = code
