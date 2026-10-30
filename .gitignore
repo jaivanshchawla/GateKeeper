@@ -73,3 +73,9 @@ compose-logs.log
 trace.log
 # Node (dashboard)
 node_modules/
+
+# The onboarding demo repository is generated: `python -m tools.make_demo_repo`.
+# Only its report is committed, not the checkout.
+demo/
+# Packed npm artifacts (`npm pack` in cli/).
+cli/*.tgz

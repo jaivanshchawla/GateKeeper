@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T15:14:25.893944+00:00",
+  "repo": {
+    "name": "hello-world-demo",
+    "url": "https://github.com/octocat/Hello-World.git",
+    "clone_dir": "repos/hello-world-demo",
+    "role": "validate",
+    "head": "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+    "since": "2010-01-01"
+  },
+  "scored": {
+    "commits_scored": 2,
+    "commit_failures": 0,
+    "band_counts": {
+      "low": 2
+    },
+    "scores": [
+      0.12505934986351308,
+      0.3772671754291319
+    ],
+    "score_min": 0.12505934986351308,
+    "score_max": 0.3772671754291319,
+    "score_median": 0.2511632626463225,
+    "distinct_scores": 2,
+    "observable_outcomes": 2,
+    "label_rate": 0.0,
+    "precision_at_high": null,
+    "high_band_count": 0,
+    "outcome_window_days": 7,
+    "commits": [
+      {
+        "sha": "553c2077f0edc3d5dc5d17262f6aa498e69d6f8e",
+        "score": 0.3772671754291319,
+        "band": "low",
+        "risky": false,
+        "files": []
+      },
+      {
+        "sha": "762941318ee16e59dabbacb1b4049eec22f0d303",
+        "score": 0.12505934986351308,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "README"
+        ]
+      }
+    ]
+  },
+  "thresholds": {},
+  "gates": [
+    {
+      "name": "enough_commits_scored",
+      "passed": false,
+      "value": 2,
+      "requirement": ">= 25 commits scored",
+      "detail": "a handful of commits cannot show a distribution"
+    },
+    {
+      "name": "model_discriminates",
+      "passed": false,
+      "value": {
+        "distinct": 2,
+        "spread": 0.2522
+      },
+      "requirement": ">= 5 distinct scores and spread >= 0.02",
+      "detail": "identical scores mean the model sees nothing it can rank here"
+    },
+    {
+      "name": "outcomes_are_observable",
+      "passed": false,
+      "value": 2,
+      "requirement": ">= 10 commits with a full outcome window",
+      "detail": "a history younger than the label window cannot be labelled"
+    },
+    {
+      "name": "label_rate_is_usable",
+      "passed": false,
+      "value": 0.0,
+      "requirement": "0.02 <= risky rate <= 0.95",
+      "detail": "0% or 100% risky is a broken label, not an easy corpus"
+    }
+  ],
+  "passed": false,
+  "registry": {
+    "added": false,
+    "reason": "dry run"
+  },
+  "calibration": {
+    "written": false,
+    "reason": "dry run"
+  },
+  "dry_run": true,
+  "duration_seconds": 10.6
+}

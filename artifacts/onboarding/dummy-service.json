@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T15:18:50.204981+00:00",
+  "repo": {
+    "name": "dummy-service",
+    "url": "https://github.com/example/dummy-service.git",
+    "clone_dir": "repos/dummy-service",
+    "role": "validate",
+    "head": "1311b0e9b13c73ae288728ca0d2e38f102c335a0",
+    "since": "2023-01-01"
+  },
+  "scored": {
+    "commits_scored": 40,
+    "commit_failures": 0,
+    "band_counts": {
+      "high": 3,
+      "low": 30,
+      "medium": 7
+    },
+    "scores": [
+      0.30128823019505013,
+      0.3449455620569292,
+      0.2468132733651295,
+      0.31266693429730485,
+      0.25507237570177954,
+      0.2955232648651081,
+      0.28216076349467134,
+      0.23625489911783454,
+      0.2631793620036718,
+      0.19498382413030788,
+      0.19024386871910884,
+      0.17159904862299108,
+      0.28629497620288236,
+      0.17815916600075885,
+      0.17344993581245213,
+      0.31674771559535664,
+      0.19178208037298733,
+      0.17344993581245213,
+      0.1855701015330722,
+      0.17472235821580276,
+      0.18448779941910845,
+      0.18448779941910845,
+      0.17850061250885782,
+      0.3525925082288014,
+      0.4399321898328099,
+      0.3477863929515815,
+      0.4243572827615192,
+      0.3618181810165691,
+      0.5207939987881992,
+      0.5146679053304786,
+      0.3477863929515815,
+      0.5646121996219657,
+      0.5646121996219657,
+      0.4542778615806585,
+      0.44259192150543286,
+      0.18394854455612064,
+      0.3375355508444698,
+      0.34329348491944867,
+      0.5146679053304786,
+      0.4399321898328099
+    ],
+    "score_min": 0.17159904862299108,
+    "score_max": 0.5646121996219657,
+    "score_median": 0.2984057475300791,
+    "distinct_scores": 34,
+    "observable_outcomes": 40,
+    "label_rate": 0.1,
+    "precision_at_high": 0.3333333333333333,
+    "high_band_count": 3,
+    "outcome_window_days": 7,
+    "commits": [
+      {
+        "sha": "a49a40537c504642ced00898d9a7e323e6526744",
+        "score": 0.5646121996219657,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/handlers.py"
+        ]
+      },
+      {
+        "sha": "682ccbc89bc14f6f5cb6cb9cd88869f57f30b50f",
+        "score": 0.5646121996219657,
+        "band": "low",
+        "risky": true,
+        "files": [
+          "service/handlers.py"
+        ]
+      },
+      {
+        "sha": "63e913fea787480eb549488c694008c4340e3d64",
+        "score": 0.5207939987881992,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/app.py"
+        ]
+      },
+      {
+        "sha": "7744784318957a10bdd84790a41d021f04400b6d",
+        "score": 0.5146679053304786,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_app.py"
+        ]
+      },
+      {
+        "sha": "01e8aaf7dcc9ed9d223b12a25e69814bbd6d4be4",
+        "score": 0.5146679053304786,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_app.py"
+        ]
+      },
+      {
+        "sha": "1e7b223dd8ab252801480b54c195e077ab0c031c",
+        "score": 0.4542778615806585,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_store.py"
+        ]
+      },
+      {
+        "sha": "f9cfad82d484b2c2ec8ed490c124301dcbb0cceb",
+        "score": 0.44259192150543286,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "2543c9e66756a249570cb4c1f320457ddd4fa4e5",
+        "score": 0.4399321898328099,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "213e5001532af79324e38e814f0e4b35214c31ce",
+        "score": 0.4399321898328099,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "6a6cab8eb5fd82385413d2f6866720c281928643",
+        "score": 0.4243572827615192,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_metrics.py"
+        ]
+      },
+      {
+        "sha": "e371d881a72dc9901bca0a65ac09790c1bac781d",
+        "score": 0.3618181810165691,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "docs/architecture.md"
+        ]
+      },
+      {
+        "sha": "2e40bcc1e1e0988a682496a0c03e5f5ecaf0d26e",
+        "score": 0.3525925082288014,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/store.py"
+        ]
+      },
+      {
+        "sha": "7c18a0008b99abb81f60b39d232f3f3444e4478d",
+        "score": 0.3477863929515815,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "requirements.txt"
+        ]
+      },
+      {
+        "sha": "fd2377148c7c320a0830d1a0907d10efdc10056d",
+        "score": 0.3477863929515815,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "README.md"
+        ]
+      },
+      {
+        "sha": "583a91a2414a77af5177d75a21433ea857ba83cc",
+        "score": 0.3449455620569292,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "e07a578d1f507d5b62e387afda7a4c429a668eea",
+        "score": 0.34329348491944867,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "Makefile"
+        ]
+      },
+      {
+        "sha": "d577beae697b1117b64e39e0995673586dafee4e",
+        "score": 0.3375355508444698,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/store.py"
+        ]
+      },
+      {
+        "sha": "1bba500037475e6eb97027ac33474c195a213043",
+        "score": 0.31674771559535664,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_app.py"
+        ]
+      },
+      {
+        "sha": "c8d7e4a983c1b1f13694d1a68b4158769a14df4f",
+        "score": 0.31266693429730485,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/store.py"
+        ]
+      },
+      {
+        "sha": "1311b0e9b13c73ae288728ca0d2e38f102c335a0",
+        "score": 0.30128823019505013,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_metrics.py"
+        ]
+      },
+      {
+        "sha": "6f157f41a009aaed32ab4635363b47ae5734ffc0",
+        "score": 0.2955232648651081,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_app.py"
+        ]
+      },
+      {
+        "sha": "cd5bbca823b94cfdc4b599bd2e42efbe328285ea",
+        "score": 0.28629497620288236,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_store.py"
+        ]
+      },
+      {
+        "sha": "ba2ae3819dcaa49eda1056efc6a8729258a63267",
+        "score": 0.28216076349467134,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/handlers.py"
+        ]
+      },
+      {
+        "sha": "3fe5d7004bb241ae300177b86c03b749b1bfa15d",
+        "score": 0.2631793620036718,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/app.py"
+        ]
+      },
+      {
+        "sha": "c2e927fc876d45d674ea5de7348ce284c68c9de3",
+        "score": 0.25507237570177954,
+        "band": "low",
+        "risky": true,
+        "files": [
+          "service/store.py"
+        ]
+      },
+      {
+        "sha": "b69aefc7a0746ab23eaa8ae2cb5663abdc807401",
+        "score": 0.2468132733651295,
+        "band": "low",
+        "risky": true,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "74475d621a94886abb11149024031a067435d60d",
+        "score": 0.23625489911783454,
+        "band": "low",
+        "risky": true,
+        "files": [
+          "service/handlers.py"
+        ]
+      },
+      {
+        "sha": "7ef59869c7f84e0d89df010e4af991e0b4823e9e",
+        "score": 0.19498382413030788,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_metrics.py"
+        ]
+      },
+      {
+        "sha": "92364f416810bf38a6daf7fe9f6eda1e4c7640a3",
+        "score": 0.19178208037298733,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/app.py"
+        ]
+      },
+      {
+        "sha": "c437d6c671cb365233238a8f0b0876047c39dcb8",
+        "score": 0.19024386871910884,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/metrics.py"
+        ]
+      },
+      {
+        "sha": "da0ea794d46a776cac194e04ff99d4616ed99648",
+        "score": 0.1855701015330722,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_app.py"
+        ]
+      },
+      {
+        "sha": "adbbce4a40114db0b3247ca250229feef9237b42",
+        "score": 0.18448779941910845,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "README.md"
+        ]
+      },
+      {
+        "sha": "ac5f87a760bb7ac0126b466848fdc704f465f3e9",
+        "score": 0.18448779941910845,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "tests/test_store.py"
+        ]
+      },
+      {
+        "sha": "b99a8005f8861e1a599029639992533819a5b3e3",
+        "score": 0.18394854455612064,
+        "band": "low",
+        "risky": false,
+        "files": [
+          ".github/workflows/ci.yml"
+        ]
+      },
+      {
+        "sha": "e45387f13b3636a9ea43b8c12601c75c99b97f15",
+        "score": 0.17850061250885782,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/config.py"
+        ]
+      },
+      {
+        "sha": "14c45c001a911b38cf1d9ab29139d366fe41a6a0",
+        "score": 0.17815916600075885,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/store.py"
+        ]
+      },
+      {
+        "sha": "86b52468d32e3b15d944e2482257b92929d94363",
+        "score": 0.17472235821580276,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "Makefile"
+        ]
+      },
+      {
+        "sha": "6a813052223d4995b98870d74e29c5e4b368b37d",
+        "score": 0.17344993581245213,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "docs/architecture.md"
+        ]
+      },
+      {
+        "sha": "6bc9e52dbbeda7e0473b46996e96da69d6b1bd53",
+        "score": 0.17344993581245213,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "service/handlers.py"
+        ]
+      },
+      {
+        "sha": "e5849fddbd31cf025c5ce367528b6afe3d1e83d1",
+        "score": 0.17159904862299108,
+        "band": "low",
+        "risky": false,
+        "files": [
+          "requirements.txt"
+        ]
+      }
+    ],
+    "band_counts_default": {
+      "low": 40
+    }
+  },
+  "thresholds": {
+    "high": 0.5147,
+    "medium": 0.3775
+  },
+  "gates": [
+    {
+      "name": "enough_commits_scored",
+      "passed": true,
+      "value": 40,
+      "requirement": ">= 25 commits scored",
+      "detail": "a handful of commits cannot show a distribution"
+    },
+    {
+      "name": "model_discriminates",
+      "passed": true,
+      "value": {
+        "distinct": 34,
+        "spread": 0.393
+      },
+      "requirement": ">= 5 distinct scores and spread >= 0.02",
+      "detail": "identical scores mean the model sees nothing it can rank here"
+    },
+    {
+      "name": "outcomes_are_observable",
+      "passed": true,
+      "value": 40,
+      "requirement": ">= 10 commits with a full outcome window",
+      "detail": "a history younger than the label window cannot be labelled"
+    },
+    {
+      "name": "label_rate_is_usable",
+      "passed": true,
+      "value": 0.1,
+      "requirement": "0.02 <= risky rate <= 0.95",
+      "detail": "0% or 100% risky is a broken label, not an easy corpus"
+    }
+  ],
+  "passed": true,
+  "registry": {
+    "added": false,
+    "reason": "dry run"
+  },
+  "calibration": {
+    "written": false,
+    "reason": "dry run"
+  },
+  "dry_run": true,
+  "duration_seconds": 18.1
+}
