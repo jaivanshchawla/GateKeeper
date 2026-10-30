@@ -358,42 +358,39 @@ def test_markers_are_registered_with_pytest(request):
 # --------------------------------------------------------------------------
 
 
-def test_gate3_builds_the_dashboard_before_building_the_images():
-    steps = _steps(_workflow("gate3_post_deploy.yml"), "smoke-tests")
-    names = _step_names(steps)
-    build = _script(_step(steps, "Build the dashboard"))
-    assert "npm" in build and "build" in build
-    assert names.index("Build the dashboard") < names.index("Build Docker containers"), (
-        "api/Dockerfile COPYs dashboard/dist/, so the dashboard has to exist first"
-    )
+def test_the_image_builds_the_dashboard_itself():
+    """The failure this replaced: the image COPYed a git-ignored directory.
 
-
-def test_the_dashboard_dist_directory_exists_in_a_fresh_clone():
-    """Belt and braces: the build step above, and a tracked place-holder."""
-    placeholder = REPO_ROOT / "dashboard" / "dist" / ".gitkeep"
-    assert placeholder.is_file(), "a fresh clone has no dashboard/dist/ without it"
-
-    tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "dashboard/dist/.gitkeep"],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert tracked.returncode == 0, "the place-holder must be committed, not just present"
-
-    dockerfile = (REPO_ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY dashboard/dist/" in dockerfile, (
-        "if this COPY goes away the place-holder is no longer needed either"
-    )
-
-
-def test_the_docker_build_context_keeps_the_dashboard_dist():
-    """A .dockerignore entry for `dist/` would recreate the Gate 3 failure.
-
-    The Dockerfile's COPY only fails if the path is missing *from the build
-    context*, so excluding it there is the other half of the same bug.
+    The root Dockerfile now builds the dashboard in a Node stage and copies the
+    result in, so a clean clone with no node_modules and no dist still builds.
+    Asserting the stage structure catches a regression to `COPY dashboard/dist`
+    from the build context, which is what made Gate 3 red for 95 runs.
     """
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM node:" in dockerfile, "the dashboard needs a build stage"
+    assert "npm ci" in dockerfile and "npm run build" in dockerfile
+    assert "COPY --from=dashboard" in dockerfile, (
+        "the runtime stage must copy the built dashboard out of the Node stage"
+    )
+    assert "COPY dashboard/dist" not in dockerfile, (
+        "dashboard/dist is git-ignored; copying it from the context fails on a clean clone"
+    )
+
+
+def test_every_image_is_built_from_the_root_dockerfile():
+    """One Dockerfile: compose, Render and the release workflow must agree."""
+    assert (REPO_ROOT / "Dockerfile").is_file()
+    assert not (REPO_ROOT / "api" / "Dockerfile").exists(), (
+        "two Dockerfiles drift; api/ holds the entrypoint, not an image definition"
+    )
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "dockerfile: Dockerfile" in compose
+    render = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
+    assert "dockerfilePath: ./Dockerfile" in render
+
+
+def test_the_docker_build_context_keeps_the_dashboard_source():
+    """The Node stage builds from source, so src/ must stay in the context."""
     patterns = [
         line.strip()
         for line in (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
@@ -412,8 +409,14 @@ def test_the_docker_build_context_keeps_the_dashboard_dist():
                 verdict = not negated
         return verdict
 
-    assert not excluded("dashboard/dist/.gitkeep"), (
-        ".dockerignore must not exclude the directory api/Dockerfile COPYs"
+    assert not excluded("dashboard/src/App.jsx"), (
+        ".dockerignore must not exclude the dashboard source the image builds"
+    )
+    assert not excluded("dashboard/package-lock.json"), (
+        "npm ci needs the lockfile in the build context"
+    )
+    assert not excluded("data/commit_features.csv"), (
+        "the runtime image copies the mined corpus out of data/"
     )
 
 

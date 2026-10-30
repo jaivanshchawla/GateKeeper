@@ -1,11 +1,28 @@
+# Render blueprint: the fastest free deployment, and the least durable.
+#
+# One Docker service serves the API and the dashboard. Render's free plan has
+# an ephemeral filesystem, so the SQLite database (issues, risk budget) resets
+# on every deploy; the model, artifacts and mined corpus are baked into the
+# image and are unaffected. That is a fine trade for a demo, and the reason
+# deploy/oracle is the recommendation for anything long-lived.
+#
+# Set CLERK_ISSUER and CLERK_PUBLISHABLE_KEY in the dashboard when prompted
+# (sync: false means Render asks rather than storing a value in this file).
+
 services:
   - type: web
-    name: gatekeeper-api
+    name: gatekeeper
     runtime: docker
-    dockerfilePath: api/Dockerfile
+    dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /health
+    autoDeploy: true
     envVars:
+      - key: DATABASE_URL
+        value: sqlite:////app/data/gatekeeper.db
       - key: MLFLOW_TRACKING_URI
-        value: sqlite:///nonexistent/mlflow.db
-        # Forces Strategy 3 (standalone skops file) — no local MLflow DB needed
+        value: sqlite:////tmp/mlflow.db
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false

@@ -1,0 +1,116 @@
+name: release
+
+# Publish the image the Oracle/Caddy deployment pulls.
+#
+# Multi-architecture on purpose: Oracle's Always Free compute is arm64 (A1),
+# and an amd64-only image fails there with "exec format error" after a
+# successful pull. amd64 is built too so the same tag runs on Render or a
+# laptop.
+#
+# The deploy job is opt-in: it runs only when the SSH secrets exist, so forks
+# and fresh clones get a green workflow instead of a red one that cannot work.
+
+on:
+  push:
+    branches: [finisher, main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for the arm64 build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to the VM
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    steps:
+      - name: Check for deploy credentials
+        id: guard
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -n "$SSH_KEY" ] && [ -n "$SSH_HOST" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "DEPLOY_SSH_KEY / DEPLOY_HOST not set; skipping the deploy job."
+          fi
+
+      - name: Pull, restart and wait for health over SSH
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          USER_NAME="${SSH_USER:-ubuntu}"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$USER_NAME@$SSH_HOST" \
+            'set -e; cd /opt/gatekeeper; docker compose pull api; docker compose up -d --remove-orphans; id=$(docker compose ps -q api); for i in $(seq 1 36); do status=$(docker inspect -f "{{.State.Health.Status}}" "$id"); echo "health: $status"; [ "$status" = healthy ] && exit 0; sleep 5; done; docker compose logs --tail=60 api; exit 1'
+
+      - name: Drop the old image from the VM
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key "${SSH_USER:-ubuntu}@$SSH_HOST" 'docker image prune -f'

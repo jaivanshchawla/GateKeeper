@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxx"
+user_ocid        = "ocid1.user.oc1..xxxx"
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "ap-mumbai-1"
+compartment_ocid = "ocid1.tenancy.oc1..xxxx" # the tenancy itself is fine
+
+# Always Free ARM: 2 OCPU / 12 GB keeps you inside 4 / 24.
+shape         = "VM.Standard.A1.Flex"
+ocpus         = 2
+memory_in_gbs = 12
+
+ssh_cidr            = "203.0.113.4/32" # your address; `curl ifconfig.me`
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# Published by .github/workflows/deploy.yml on every push to the default branch.
+image = "ghcr.io/jaivanshchawla/gatekeeper:latest"
+
+# Leave empty to serve on https://<ip>.sslip.io with a real certificate.
+domain = ""
+
+# Leave empty to run without sign-in; set both to turn Clerk on.
+clerk_issuer          = ""
+clerk_publishable_key = ""
+
+# Only needed while the GHCR package is private.
+github_actor = ""
+github_token = ""

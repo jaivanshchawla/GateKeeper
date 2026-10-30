@@ -37,20 +37,11 @@ jobs:
         with:
           node-version: "20"
 
-      # dashboard/dist/ is gitignored, so a fresh clone has no such directory
-      # -- and api/Dockerfile COPYs it, which is why `docker compose build`
-      # failed on this workflow for 95 consecutive runs. There are now two
-      # independent guards: this step, which puts a real dashboard in the
-      # image, and the tracked dashboard/dist/.gitkeep, which keeps the
-      # directory itself present for anyone who skips it.
+      # The image builds the dashboard itself, in a Node stage, from the
+      # committed lockfile. This workflow used to pre-build dashboard/dist
+      # because the old api/Dockerfile COPYed it from the build context -- a
+      # directory git ignores, which is why this job was red for 95 runs.
       #
-      # `npm install` rather than `npm ci`: the dashboard has no committed
-      # lockfile to install from.
-      - name: Build the dashboard
-        run: |
-          npm --prefix dashboard install --no-audit --no-fund
-          npm --prefix dashboard run build
-
       # tee so a failed build can be read from the run's artifacts; pipefail
       # keeps `docker compose build`'s exit status rather than tee's.
       - name: Build Docker containers

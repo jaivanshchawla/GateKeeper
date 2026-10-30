@@ -7,6 +7,10 @@ numpy
 pandas
 scikit-learn
 pyyaml
+# Clerk session verification (auth/clerk.py imports jwt directly, and RS256
+# needs the crypto extra). Declared here rather than relied on as a transitive
+# dependency of mlflow, which is how the image first built without it.
+pyjwt[crypto]
 mlflow
 prometheus-fastapi-instrumentator
 requests

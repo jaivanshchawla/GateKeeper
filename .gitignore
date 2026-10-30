@@ -6,6 +6,9 @@ data/graph_snapshots/
 
 # MLflow tracking database
 mlflow.db
+mlflow.db.bak*
+# SQLite databases the API creates on first run (issues, outcomes, budget).
+data/*.db
 
 # MLflow tracking directory
 mlruns/
@@ -55,6 +58,9 @@ repos/
 
 # MLflow database backups
 mlflow.db.backup-*
+
+# A local uvicorn log, and any other stray run output.
+api_server.log
 
 # Diagnostics the workflows upload when they fail, and verify_all writes always.
 # They are deliberately not committed: they describe one run on one machine.

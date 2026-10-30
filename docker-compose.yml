@@ -1,74 +1,95 @@
+# Local and single-VM deployment.
+#
+# The API serves the dashboard from the same origin, so there is no proxy and
+# no CORS to configure. The database is SQLite in a named volume by default:
+# one container, one volume, nothing to provision. `--profile postgres` swaps
+# in Postgres for a deployment that wants it.
+#
+#   docker compose up -d
+#   docker compose --profile postgres up -d
+#   docker compose --profile observability up -d
+#
+# Production on Oracle's Always Free VM does not use this file: cloud-init in
+# deploy/oracle writes a compose file that pulls the published image instead of
+# building here. This one is for a laptop and for `docker compose build` in CI.
+
 services:
   api:
     build:
       context: .
-      dockerfile: api/Dockerfile
+      dockerfile: Dockerfile
+    image: gatekeeper:local
     ports:
-      - "3000:8000"
+      - "8000:8000"
     environment:
-      - MLFLOW_TRACKING_URI=sqlite:///app/mlflow.db
-      - DATABASE_URL=postgresql://gatekeeper:gatekeeper@postgres:5432/gatekeeper
+      # SQLite by default: the four tables this app owns do not justify a
+      # server, and an empty volume is a working deployment.
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/gatekeeper.db}
+      MLFLOW_TRACKING_URI: sqlite:////tmp/mlflow.db
+      # Clerk: leave unset to run without sign-in. Setting either variable
+      # switches authentication on and the API rejects anonymous requests.
+      CLERK_ISSUER: ${CLERK_ISSUER:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      CLERK_AUTHORIZED_PARTIES: ${CLERK_AUTHORIZED_PARTIES:-}
+      GATEKEEPER_AUTH_MODE: ${GATEKEEPER_AUTH_MODE:-}
     volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - gatekeeper-network
+      - gatekeeper_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
   postgres:
     image: postgres:16-alpine
+    profiles: ["postgres"]
     environment:
-      - POSTGRES_USER=gatekeeper
-      - POSTGRES_PASSWORD=gatekeeper
-      - POSTGRES_DB=gatekeeper
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: gatekeeper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gatekeeper}
+      POSTGRES_DB: gatekeeper
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - gatekeeper-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gatekeeper"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
+    profiles: ["observability"]
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
-    networks:
-      - gatekeeper-network
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
+    profiles: ["observability"]
     ports:
       - "3100:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=gatekeeper
-      - GF_USERS_ALLOW_SIGN_UP=false
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-gatekeeper}
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
-    networks:
-      - gatekeeper-network
+    restart: unless-stopped
 
 volumes:
+  gatekeeper_data:
   postgres_data:
   prometheus_data:
   grafana_data:
-
-networks:
-  gatekeeper-network:
-    driver: bridge

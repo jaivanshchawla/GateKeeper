@@ -1,15 +1,30 @@
-venv/
-mlruns/
-data/
-repos/
-*.db
-*.csv
-*.pyc
-__pycache__/
+# Build context: keep it small and keep secrets out.
+#
+# Note that data/ is NOT excluded wholesale: the runtime image copies six
+# specific files out of it. Excluding the directory would silently make those
+# COPY lines fail (or, worse, ship an image with no metrics).
+
 .git/
 .github/
-.dvc/
-.gitignore
+.husky/
+venv/
+node_modules/
+dashboard/node_modules/
+cli/node_modules/
+repos/
+mlruns/
+data/archive/
+data/graph_snapshots/
+data/*.db
+data/*.backup*
+tests/
+docs/
+smoke_tests/
+dashboard/dist/
+*.pyc
+__pycache__/
+*.log
 .env
-*.md
-!api/requirements-slim.txt
+.env.*
+mlflow.db*
+mlflow.db.bak

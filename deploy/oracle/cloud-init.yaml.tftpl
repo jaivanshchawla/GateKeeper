@@ -1,0 +1,135 @@
+#!/bin/bash
+# First-boot setup for the Always Free VM.
+#
+# Installs Docker, writes the production stack, and starts it. Everything after
+# this point is `git push` -> CI -> `docker compose pull`, so this runs once per
+# instance.
+#
+# Terraform substitutes only its own dollar-brace placeholders below; shell
+# variables deliberately avoid braces so the two syntaxes cannot collide.
+set -euo pipefail
+
+exec > >(tee /var/log/gatekeeper-bootstrap.log) 2>&1
+echo "== gatekeeper bootstrap $(date -Is) =="
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y ca-certificates curl gnupg git ufw
+
+# Docker from Docker's own repository: the distro package is too old to have
+# `docker compose` (v2).
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+ARCH=$(dpkg --print-architecture)
+CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+install -d -o ubuntu -g ubuntu /opt/gatekeeper
+cd /opt/gatekeeper
+
+IMAGE="${image}"
+DOMAIN="${domain}"
+CLERK_ISSUER="${clerk_issuer}"
+CLERK_PUBLISHABLE_KEY="${clerk_publishable_key}"
+AUTH_MODE="off"
+[ -n "$CLERK_ISSUER" ] && AUTH_MODE="on"
+
+# Oracle reassigns ephemeral public IPs on stop/start, so the hostname is
+# resolved at boot. sslip.io maps a hostname to an IP and Caddy can obtain a
+# real certificate for it, which is what makes TLS work without owning a domain.
+if [ -n "$DOMAIN" ]; then
+  SITE_HOST="$DOMAIN"
+else
+  PUBLIC_IP=$(curl -fsS --retry 5 https://ifconfig.me)
+  SITE_HOST=$(echo "$PUBLIC_IP" | tr '.' '-').sslip.io
+fi
+echo "site host: $SITE_HOST"
+
+cat > docker-compose.yml <<COMPOSE
+services:
+  api:
+    image: $IMAGE
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////app/data/gatekeeper.db
+      CLERK_ISSUER: $CLERK_ISSUER
+      CLERK_PUBLISHABLE_KEY: $CLERK_PUBLISHABLE_KEY
+      GATEKEEPER_AUTH_MODE: $AUTH_MODE
+    volumes:
+      - gatekeeper_data:/app/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  gatekeeper_data:
+  caddy_data:
+  caddy_config:
+COMPOSE
+
+cat > Caddyfile <<CADDY
+$SITE_HOST {
+	encode zstd gzip
+	reverse_proxy api:8000
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+CADDY
+
+chown -R ubuntu:ubuntu /opt/gatekeeper
+
+%{ if github_token != "" ~}
+# Private GHCR package: authenticate before the first pull.
+echo "${github_token}" | docker login ghcr.io -u "${github_actor}" --password-stdin
+%{ endif ~}
+
+docker compose pull
+docker compose up -d
+
+# Redundant with Docker's restart policy, but it also re-runs after a host
+# reboot where the daemon started before the network.
+cat > /etc/systemd/system/gatekeeper.service <<UNIT
+[Unit]
+Description=Gatekeeper stack
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/gatekeeper
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable gatekeeper.service
+
+echo "== bootstrap complete $(date -Is) =="
