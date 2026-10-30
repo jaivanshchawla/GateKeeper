@@ -571,3 +571,60 @@ def test_the_release_tag_must_match_the_package_version():
     text = _text("publish-cli.yml")
     assert "GITHUB_REF_NAME#cli-v" in text
     assert "does not match package.json version" in text
+
+
+# --------------------------------------------------------------------------
+# Every COPY in the Dockerfile must exist in a clean clone
+# --------------------------------------------------------------------------
+
+
+def _dockerfile_copies() -> list[tuple[int, list[str]]]:
+    """(line number, source paths) for every COPY that reads the build context."""
+    copies: list[tuple[int, list[str]]] = []
+    for number, line in enumerate((REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.upper().startswith("COPY "):
+            continue
+        if "--from=" in stripped:  # reads the other build stage, not the context
+            continue
+        parts = [p for p in stripped.split()[1:] if not p.startswith("--")]
+        if len(parts) < 2:
+            continue
+        copies.append((number, parts[:-1]))
+    return copies
+
+
+def test_every_dockerfile_copy_source_is_in_the_repository():
+    """Two images failed to build from a clean clone for the same reason.
+
+    `dashboard/dist/` was git-ignored, and then `data/commit_features.csv`
+    (DVC-tracked) was too. Both built fine on a machine that had run the
+    generator, and both failed on every CI run -- the second one for 42 runs
+    before anyone looked. A COPY of something git does not track cannot be a
+    build input.
+    """
+    untracked: list[str] = []
+    missing: list[str] = []
+
+    for number, sources in _dockerfile_copies():
+        for source in sources:
+            matches = list(REPO_ROOT.glob(source))
+            if not matches:
+                missing.append(f"Dockerfile:{number}: {source}")
+                continue
+            for match in matches:
+                relative = match.relative_to(REPO_ROOT).as_posix()
+                tracked = subprocess.run(
+                    ["git", "ls-files", "--error-unmatch", relative],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                if tracked.returncode != 0 and not relative.endswith("/"):
+                    untracked.append(f"Dockerfile:{number}: {relative}")
+
+    assert not missing, "COPY sources that match nothing:\n  " + "\n  ".join(missing)
+    assert not untracked, (
+        "COPY sources git does not track, so a clean clone cannot build:\n  "
+        + "\n  ".join(untracked)
+    )

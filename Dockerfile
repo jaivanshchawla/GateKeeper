@@ -57,7 +57,13 @@ COPY webhook/ ./webhook/
 
 # The data the read-only endpoints serve. The rest of data/ is 258 MB of mined
 # archives and graphs that nothing at runtime opens.
-COPY data/commit_features.csv data/scored_prs.json ./data/
+#
+# `data/commit_features.csv` is deliberately absent: it is git-ignored (DVC
+# tracks it), so a build from a clean clone -- which is what CI does -- failed
+# on this COPY with "/data/commit_features.csv: not found". Every endpoint that
+# reads it is guarded by `if csv_path.exists()`, so the image serves without it
+# and the training-corpus numbers are simply not claimed in that deployment.
+COPY data/scored_prs.json ./data/
 COPY data/u69_*_oow.json ./data/
 
 COPY --from=dashboard /ui/dist ./dashboard/dist
