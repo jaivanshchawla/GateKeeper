@@ -108,11 +108,13 @@ class TestShippedRegistry:
 
 class TestConsumersAgree:
     def test_api_repo_list_is_the_registry(self):
-        from api.main import REPO_MAP, REPO_NAMES
+        # The API reads the registry per request rather than caching a list at
+        # import, so the accessor -- not a module constant -- is the surface.
+        from api.main import _declared_repos, _repo_map
 
-        assert list(REPO_NAMES) == list(registry.repo_names())
-        assert set(REPO_MAP) == set(registry.repo_names())
-        for name, path in REPO_MAP.items():
+        assert [repo.name for repo in _declared_repos()] == list(registry.repo_names())
+        assert set(_repo_map()) == set(registry.repo_names())
+        for name, path in _repo_map().items():
             assert path == registry.get(name).path
 
     def test_history_features_repo_list_is_the_registry(self):
