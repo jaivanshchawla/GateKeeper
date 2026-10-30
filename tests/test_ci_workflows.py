@@ -616,6 +616,7 @@ def test_every_dockerfile_copy_source_is_in_the_repository():
                 relative = match.relative_to(REPO_ROOT).as_posix()
                 tracked = subprocess.run(
                     ["git", "ls-files", "--error-unmatch", relative],
+                    check=False,
                     cwd=REPO_ROOT,
                     capture_output=True,
                     text=True,
