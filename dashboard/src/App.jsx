@@ -5,25 +5,11 @@ import {
   AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
 
-const API = import.meta.env.VITE_API_URL || ''
+import { api, apiPost } from './api.js'
+
 const BAND_COLORS = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' }
 const BAND_BG = { high: 'rgba(239,68,68,0.12)', medium: 'rgba(245,158,11,0.12)', low: 'rgba(34,197,94,0.12)' }
 const BAND_DISPLAY = { high: 'HIGH RISK', medium: 'ELEVATED', low: 'NOT FLAGGED', unscored: 'NOT SCORED' }
-
-// ── API helpers ──────────────────────────────────────────────
-async function api(path) {
-  const r = await fetch(`${API}${path}`)
-  if (!r.ok) throw new Error(`API ${r.status}: ${r.statusText}`)
-  return r.json()
-}
-async function apiPost(path, body) {
-  const r = await fetch(`${API}${path}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!r.ok) throw new Error(`API ${r.status}: ${r.statusText}`)
-  return r.json()
-}
 
 // ── Shared components ────────────────────────────────────────
 function BandBadge({ band, size = 'sm' }) {
@@ -549,16 +535,58 @@ function ModelHealthView() {
         </div>
       ))}
 
-      <div className="card">
-        <h2>Known Limitations</h2>
-        <ul className="file-list">
-          <li><strong>React OOW:</strong> ROC-AUC 0.581 — weakest out-of-window performance (W7.2 full-N)</li>
-          <li><strong>Mean OOW ROC-AUC:</strong> 0.620 across all 5 repos (down from 0.789 LORO)</li>
-          <li><strong>Band-share drift:</strong> Django 7.2%, React 17.8%, Kafka 16.4%, K8s 15.1%, Rust 11.4% — repos above 10% score higher than training</li>
-          <li><strong>Merge commits:</strong> git log --numstat returns 0 files for merges — known limitation, labels incomplete for merge-heavy repos</li>
-          <li><strong>Calibration:</strong> Brier 0.224 — scores are rankings, not probabilities</li>
-        </ul>
-      </div>
+      <Limitations health={health} driftRepos={driftRepos} />
+    </div>
+  )
+}
+
+// ── Known limitations, derived rather than remembered ────────
+//
+// Every number here comes from /model/health or /drift, so it cannot drift
+// away from the artifacts. The qualitative rows stay because they describe
+// how the corpus is built, not a measurement.
+function Limitations({ health, driftRepos }) {
+  const perRepo = Object.entries(health?.per_repo_oow || {})
+  const weakest = perRepo.length
+    ? perRepo.reduce((worst, entry) => (entry[1] < worst[1] ? entry : worst))
+    : null
+  const mean =
+    perRepo.length > 0 ? perRepo.reduce((sum, [, auc]) => sum + auc, 0) / perRepo.length : null
+  const overTen = driftRepos
+    .filter(([, r]) => r.drift_share != null && r.drift_share > 0.1)
+    .map(([name, r]) => `${name} ${(r.drift_share * 100).toFixed(1)}%`)
+
+  return (
+    <div className="card">
+      <h2>Known Limitations</h2>
+      <ul className="file-list">
+        {weakest && (
+          <li>
+            <strong>Weakest out-of-window repo:</strong> {weakest[0]} at ROC-AUC{' '}
+            {weakest[1].toFixed(3)}
+          </li>
+        )}
+        {mean != null && (
+          <li>
+            <strong>Mean OOW ROC-AUC:</strong> {mean.toFixed(3)} across {perRepo.length}{' '}
+            repositories, against {health.roc_auc ? health.roc_auc.toFixed(3) : '-'} leave-one-repo-out
+          </li>
+        )}
+        {overTen.length > 0 && (
+          <li>
+            <strong>Band-share drift above 10%:</strong> {overTen.join(', ')} — these
+            repositories score higher than their training share
+          </li>
+        )}
+        <li>
+          <strong>Merge commits:</strong> git log --numstat returns 0 files for merges, so labels
+          are incomplete for merge-heavy repositories
+        </li>
+        <li>
+          <strong>Calibration:</strong> scores are rankings, not probabilities — a band is a
+          relative risk position, not a failure probability
+        </li>
+      </ul>
     </div>
   )
 }
@@ -590,7 +618,7 @@ function ThemeToggle() {
 }
 
 // ── Main App ─────────────────────────────────────────────────
-export default function App() {
+export default function App({ accountSlot = null }) {
   const [view, setView] = useState('repos')
   const [selectedRepo, setSelectedRepo] = useState(null)
   const [selectedCommit, setSelectedCommit] = useState(null)
@@ -615,6 +643,7 @@ export default function App() {
           <button key={key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}</button>
         ))}
         </nav>
+        {accountSlot}
         <ThemeToggle />
       </div>
 

@@ -250,3 +250,24 @@ td code { font-size: 0.8rem; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .repo-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Sign-in ───────────────────────────────────────────────────── */
+.signin-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: var(--surface-0);
+}
+.signin-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-8);
+  max-width: 460px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+.signin-card h1 { font-size: 1.5rem; margin-bottom: var(--sp-2); }
+.signin-card p { color: var(--text-1); margin-bottom: var(--sp-5); line-height: 1.5; }
+.signin-card code { font-family: var(--font-mono); font-size: 0.85em; }
