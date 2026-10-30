@@ -1,0 +1,74 @@
+name: publish-cli
+
+# Publish `gatekeeper-cli` to npm from a tag, so a release is a tag rather than
+# a laptop with a token on it. `npm pack` already proves the tarball contains
+# only what it should; this workflow proves it installs.
+#
+# Requires the NPM_TOKEN repository secret (an npm automation token). Without
+# it the job passes and says so, so forks and fresh clones are not red.
+
+on:
+  push:
+    tags: ["cli-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Pack, test, publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/cli-v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#cli-v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      # Only the packaged tarball is installed, so a missing `files` entry or a
+      # broken bin path fails here instead of in a user's project.
+      - name: Install the packed tarball and run it
+        run: |
+          set -euo pipefail
+          npm pack --silent > /dev/null
+          version="$(node -p "require('./package.json').version")"
+          npm install --prefix "$RUNNER_TEMP/probe" "./gatekeeper-cli-${version}.tgz" --no-audit --no-fund
+          "$RUNNER_TEMP/probe/node_modules/.bin/gatekeeper" --version
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN is not set; packing only. Add it in Settings → Secrets to publish."
+            npm pack --dry-run
+            exit 0
+          fi
+          npm publish --access public

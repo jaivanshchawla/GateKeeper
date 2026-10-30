@@ -79,3 +79,10 @@ node_modules/
 demo/
 # Packed npm artifacts (`npm pack` in cli/).
 cli/*.tgz
+
+# Terraform: the variable file holds the OCI private key path and the secrets
+# that belong to one machine's state, never to the repository.
+deploy/oracle/terraform.tfvars
+deploy/oracle/.terraform/
+deploy/oracle/*.tfstate
+deploy/oracle/*.tfstate.*

@@ -144,7 +144,7 @@ schema_version: 1
 repos:
   - name: django
     url: https://github.com/django/django.git
-    clone_dir: repos/django
+    clone_dir: checkouts/django
     role: train
     description: Keep this comment.
 """
@@ -164,7 +164,7 @@ def test_register_appends_without_losing_the_files_comments(registry_file):
     result = pipeline.register(
         "flask",
         "https://github.com/pallets/flask.git",
-        "repos/flask",
+        "checkouts/flask",
         "validate",
         "A candidate.",
         path=registry_file,
@@ -183,7 +183,7 @@ def test_register_appends_without_losing_the_files_comments(registry_file):
 
 def test_registering_the_same_url_again_is_a_no_op(registry_file):
     result = pipeline.register(
-        "django", "https://github.com/django/django.git", "repos/django", "train", path=registry_file
+        "django", "https://github.com/django/django.git", "checkouts/django", "train", path=registry_file
     )
     assert result["added"] is False
     assert result["reason"] == "already declared"
@@ -195,7 +195,7 @@ def test_registering_a_known_name_with_a_different_url_is_refused(registry_file)
         pipeline.register(
             "django",
             "https://github.com/someone/else.git",
-            "repos/else",
+            "checkouts/else",
             "train",
             path=registry_file,
         )
@@ -220,7 +220,7 @@ def test_a_rejected_entry_is_rolled_back(registry_file, monkeypatch):
         pipeline.register(
             "flask",
             "https://github.com/pallets/flask.git",
-            "repos/flask",
+            "checkouts/flask",
             "train",
             path=registry_file,
         )

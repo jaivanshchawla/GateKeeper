@@ -532,3 +532,42 @@ def test_verify_all_still_covers_the_hook_layer():
     for path in verify_all.HOOK_TEST_FILES:
         assert (REPO_ROOT / path).is_file(), f"{path} is gone"
     assert tuple(verify_all.HOOK_TEST_FILES) == HOOK_TEST_FILES
+
+
+# --------------------------------------------------------------------------
+# Releasing the CLI
+# --------------------------------------------------------------------------
+
+
+def test_the_cli_is_published_from_a_tag_not_a_laptop():
+    workflow = _workflow("publish-cli.yml")
+    triggers = workflow.get("on") or workflow.get(True)
+    assert "cli-v*" in (triggers.get("push") or {}).get("tags", []), (
+        "publishing must be triggered by a tag, so the released version is a "
+        "reviewed commit rather than whatever is on someone's machine"
+    )
+
+
+def test_the_publish_job_proves_the_tarball_before_it_is_released():
+    workflow = _workflow("publish-cli.yml")
+    steps = _steps(workflow, "publish")
+    names = [step.get("name") for step in steps if step.get("name")]
+
+    # A `files` entry that forgets a module, or a bin path that points at a
+    # missing file, is invisible until an install fails in a user's project.
+    # Installing the packed tarball is the only check that catches both.
+    assert any("packed tarball" in name for name in names), names
+    assert names.index("Test") < names.index("Publish")
+
+
+def test_the_publish_job_is_green_without_a_token():
+    """A fork has no NPM_TOKEN; its release workflow must still pass."""
+    text = _text("publish-cli.yml")
+    assert "NPM_TOKEN is not set" in text
+    assert "npm pack --dry-run" in text
+
+
+def test_the_release_tag_must_match_the_package_version():
+    text = _text("publish-cli.yml")
+    assert "GITHUB_REF_NAME#cli-v" in text
+    assert "does not match package.json version" in text
