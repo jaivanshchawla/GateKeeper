@@ -244,6 +244,44 @@ class TestRepoEndpoints:
         assert "registered_at" not in body["repo"]
         assert client.get("/repos/not-a-declared-repo").status_code == 404
 
+    def test_the_repo_list_follows_the_registry_file(self, monkeypatch, tmp_path):
+        """Adding a repository must not require restarting the API.
+
+        The list used to be resolved once at import, which defeated the
+        registry's own mtime cache in any long-running process.
+        """
+        import os
+
+        import registry
+        from api import main as api_main
+        from registry import clear_cache
+
+        monkeypatch.setattr(registry, "PROJECT_ROOT", tmp_path)
+        registry_file = tmp_path / "repos.yaml"
+        monkeypatch.setenv("GATEKEEPER_REGISTRY", str(registry_file))
+        clear_cache()
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        # A second apart: the cache keys on mtime, whose resolution is coarser
+        # than a nanosecond on most filesystems.
+        stamp = [10**18]
+
+        def declare(*names):
+            entries = "".join(
+                f"  - name: {name}\n"
+                f"    url: https://example.com/{name}.git\n"
+                f"    clone_dir: {name}\n"
+                for name in names
+            )
+            registry_file.write_text(f"repos:\n{entries}", encoding="utf-8")
+            stamp[0] += 10**9
+            os.utime(registry_file, ns=(stamp[0], stamp[0]))
+
+        declare("a")
+        assert [row["name"] for row in api_main.list_repos()] == ["a"]
+        declare("a", "b")
+        assert [row["name"] for row in api_main.list_repos()] == ["a", "b"]
+
 
 class TestModelNotLoaded:
     """Tests for when the model is not loaded."""

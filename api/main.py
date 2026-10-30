@@ -433,7 +433,8 @@ async def get_all_budgets():
     """Get budget status for all repos."""
     from policy.budget import RiskBudget
     budget = RiskBudget()
-    return [s.to_dict() for s in budget.get_all_statuses(REPO_NAMES)]
+    names = [repo.name for repo in _declared_repos()]
+    return [s.to_dict() for s in budget.get_all_statuses(names)]
 
 
 @app.post("/budget/{repo}/record")
@@ -501,9 +502,18 @@ def _declared_repos():
     return registered()
 
 
-_DECLARED_REPOS = _declared_repos()
-REPO_NAMES = [repo.name for repo in _DECLARED_REPOS]
-REPO_MAP = {repo.name: repo.path for repo in _DECLARED_REPOS}
+# Fail at import, not on the first request, when the registry is broken.
+_declared_repos()
+
+
+def _repo_map() -> dict[str, Path]:
+    """Declared repositories by name, resolved per call.
+
+    ``registry.load`` caches on the file's mtime, so this is cheap, and reading
+    the file here rather than at import means adding a repository takes effect
+    on the next request instead of needing a process restart.
+    """
+    return {repo.name: repo.path for repo in _declared_repos()}
 
 
 def _get_db():
@@ -628,7 +638,7 @@ def list_repos():
     training_counts = _training_commit_counts()
 
     repos_out = []
-    for repo in _DECLARED_REPOS:
+    for repo in _declared_repos():
         if not repo.path.exists():
             continue
         scores = _oow_scores(repo.name)
@@ -706,11 +716,10 @@ def _score_repo_rows(repo_id: str, rdf) -> tuple[list[dict], dict[str, int]]:
 # with blocking calls stalls the event loop for every other request.
 def get_repo(repo_id: str):
     """Get repo detail with commits, band distribution, and file hotspots."""
-    if repo_id not in REPO_MAP:
+    declared = next((r for r in _declared_repos() if r.name == repo_id), None)
+    if declared is None or not declared.path.exists():
         raise HTTPException(status_code=404, detail=f"Repo {repo_id} not found")
-    rp = REPO_MAP[repo_id]
-    if not rp.exists():
-        raise HTTPException(status_code=404, detail=f"Repo {repo_id} not found")
+    rp = declared.path
 
     # Load training CSV for this repo
     commits = []
@@ -744,7 +753,6 @@ def get_repo(repo_id: str):
     except Exception:
         pass
 
-    declared = next(r for r in _DECLARED_REPOS if r.name == repo_id)
     return {
         "repo": {
             "id": repo_id,
@@ -869,7 +877,7 @@ def get_file(file_path: str):
     total_changes = 0
     revert_count = 0
     authors = set()
-    for rp in REPO_MAP.values():
+    for rp in _repo_map().values():
         if not rp.exists():
             continue
         try:
