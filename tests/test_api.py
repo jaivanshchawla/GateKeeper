@@ -244,6 +244,34 @@ class TestRepoEndpoints:
         assert "registered_at" not in body["repo"]
         assert client.get("/repos/not-a-declared-repo").status_code == 404
 
+    def test_a_repository_without_a_checkout_is_listed_as_such(self, monkeypatch, tmp_path):
+        """A deployment ships mined data, not the clones.
+
+        The row must still appear (so the dashboard can show the corpus), and
+        must say the history is absent rather than implying a checkout.
+        """
+        import registry
+        from api import main as api_main
+        from registry import clear_cache
+
+        monkeypatch.setattr(registry, "PROJECT_ROOT", tmp_path)
+        registry_file = tmp_path / "repos.yaml"
+        monkeypatch.setenv("GATEKEEPER_REGISTRY", str(registry_file))
+        clear_cache()
+        registry_file.write_text(
+            "repos:\n"
+            "  - name: uncloned\n"
+            "    url: https://example.com/uncloned.git\n"
+            "    clone_dir: nowhere\n"
+            "    role: train\n",
+            encoding="utf-8",
+        )
+
+        rows = api_main.list_repos()
+        assert [row["name"] for row in rows] == ["uncloned"]
+        assert rows[0]["clone_present"] is False
+        assert rows[0]["remote_url"] == "https://example.com/uncloned.git"
+
     def test_the_repo_list_follows_the_registry_file(self, monkeypatch, tmp_path):
         """Adding a repository must not require restarting the API.
 

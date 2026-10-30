@@ -48,7 +48,12 @@ function OverviewView({ onSelectRepo }) {
         <h2>Repositories</h2>
         <div className="repo-grid">
           {repos.map(repo => (
-            <div key={repo.id} className="repo-card" onClick={() => onSelectRepo(repo.id)}>
+            <div
+              key={repo.id}
+              className={repo.clone_present === false ? 'repo-card disabled' : 'repo-card'}
+              onClick={repo.clone_present === false ? undefined : () => onSelectRepo(repo.id)}
+              title={repo.clone_present === false ? 'History is not checked out in this deployment' : undefined}
+            >
               <h3>{repo.name}</h3>
               <div className="repo-url">{repo.remote_url || 'no remote'}</div>
               <div className="repo-stats">
@@ -61,7 +66,11 @@ function OverviewView({ onSelectRepo }) {
                 </div>
               )}
               <div className="repo-date">
-                {repo.registered_at ? `Registered ${repo.registered_at.slice(0, 10)}` : `${repo.role} corpus`}
+                {repo.clone_present === false
+                  ? `${repo.role} corpus · history not checked out here`
+                  : repo.registered_at
+                    ? `Registered ${repo.registered_at.slice(0, 10)}`
+                    : `${repo.role} corpus`}
               </div>
             </div>
           ))}

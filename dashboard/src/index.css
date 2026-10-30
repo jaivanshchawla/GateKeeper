@@ -139,6 +139,8 @@ a:hover { text-decoration: underline; }
   cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
 }
 .repo-card:hover { border-color: var(--accent); box-shadow: var(--shadow-lg); }
+.repo-card.disabled { cursor: default; opacity: 0.75; }
+.repo-card.disabled:hover { border-color: var(--border); box-shadow: none; }
 .repo-card h3 { font-size: 1.05rem; font-weight: 600; color: var(--text-0); margin-bottom: var(--sp-1); text-transform: none; letter-spacing: normal; }
 .repo-url { font-size: 0.8rem; color: var(--text-2); font-family: var(--font-mono); margin-bottom: var(--sp-3); }
 .repo-stats { display: flex; align-items: center; gap: var(--sp-3); font-size: 0.85rem; color: var(--text-1); }

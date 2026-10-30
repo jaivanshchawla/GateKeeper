@@ -647,8 +647,10 @@ def list_repos():
 
     repos_out = []
     for repo in _declared_repos():
-        if not repo.path.exists():
-            continue
+        # A deployment ships the mined data but not the multi-gigabyte clones.
+        # Hiding those repositories made /repos empty in the container while
+        # the dashboard still claimed to know them, so the row is served with
+        # clone_present=false and the detail endpoint is the one that 404s.
         scores = _oow_scores(repo.name)
         record = enrolled.get(repo.name)
         latest = scores[0] if scores else None
@@ -667,6 +669,7 @@ def list_repos():
             "latest_band": _band_for(repo.name, latest["score"]) if latest else None,
             "risk_trend": risk_trend,
             "registered_at": record.registered_at.isoformat() if record else None,
+            "clone_present": repo.path.exists(),
         })
     return repos_out
 
